@@ -173,9 +173,9 @@ select_backends() {
     fi
 
     echo ""
-    $INSTALL_CLAUDE && ok "Selected: Claude Code"
-    $INSTALL_CODEX  && ok "Selected: Codex CLI"
-    $INSTALL_GEMINI && ok "Selected: Gemini CLI"
+    if $INSTALL_CLAUDE; then ok "Selected: Claude Code"; fi
+    if $INSTALL_CODEX;  then ok "Selected: Codex CLI";  fi
+    if $INSTALL_GEMINI; then ok "Selected: Gemini CLI"; fi
 }
 
 # ============================================================
