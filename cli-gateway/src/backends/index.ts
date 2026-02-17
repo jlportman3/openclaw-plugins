@@ -1,11 +1,13 @@
 import type { CliBackend, GatewayConfig } from "../types.ts";
 import { createClaudeCodeBackend } from "./claude-code.ts";
+import { createCodexBackend } from "./codex.ts";
 
 const backendFactories: Record<
   string,
   (config: GatewayConfig["backends"][string]) => CliBackend
 > = {
   "claude-code": createClaudeCodeBackend,
+  "codex": createCodexBackend,
 };
 
 const activeBackends = new Map<string, CliBackend>();

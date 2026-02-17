@@ -7,6 +7,13 @@
       "defaultModel": "sonnet",
       "tools": false,
       "sessionContinuity": true
+    },
+    "codex": {
+      "enabled": true,
+      "command": "codex",
+      "defaultModel": "o4-mini",
+      "tools": false,
+      "sessionContinuity": true
     }
   }
 }
