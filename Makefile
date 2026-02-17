@@ -227,6 +227,9 @@ _install-service:
 		'After=network.target' \
 		'Wants=network-online.target' \
 		'' \
+		'StartLimitIntervalSec=60' \
+		'StartLimitBurst=3' \
+		'' \
 		'[Service]' \
 		'Type=simple' \
 		'User=$(INSTALL_USER)' \
@@ -235,8 +238,6 @@ _install-service:
 		'ExecStart=$(NODE_BIN) --experimental-strip-types src/server.ts' \
 		'Restart=on-failure' \
 		'RestartSec=5' \
-		'StartLimitIntervalSec=60' \
-		'StartLimitBurst=3' \
 		'' \
 		'# Environment' \
 		'EnvironmentFile=-$(ENV_FILE)' \
@@ -423,6 +424,14 @@ _openclaw-config:
 .PHONY: _openclaw-service
 _openclaw-service:
 	@echo "==> Installing OpenClaw gateway as user service"
+	@# Clean up old system service from previous installs
+	@if [ -f /etc/systemd/system/$(OPENCLAW_SERVICE).service ]; then \
+		echo "  Removing old system service /etc/systemd/system/$(OPENCLAW_SERVICE).service"; \
+		systemctl stop $(OPENCLAW_SERVICE) 2>/dev/null || true; \
+		systemctl disable $(OPENCLAW_SERVICE) 2>/dev/null || true; \
+		rm -f /etc/systemd/system/$(OPENCLAW_SERVICE).service; \
+		systemctl daemon-reload; \
+	fi
 	@# Enable lingering so user services persist after logout/reboot
 	@loginctl enable-linger $(INSTALL_USER) 2>/dev/null || true
 	@# Create user service directory
@@ -432,6 +441,8 @@ _openclaw-service:
 		'[Unit]' \
 		'Description=OpenClaw Gateway' \
 		'Documentation=https://github.com/openclaw/openclaw' \
+		'StartLimitIntervalSec=60' \
+		'StartLimitBurst=3' \
 		'' \
 		'[Service]' \
 		'Type=simple' \
@@ -439,8 +450,6 @@ _openclaw-service:
 		'ExecStart=$(NODE_BIN) dist/entry.js gateway run --port $(OPENCLAW_PORT)' \
 		'Restart=on-failure' \
 		'RestartSec=5' \
-		'StartLimitIntervalSec=60' \
-		'StartLimitBurst=3' \
 		'' \
 		'Environment=HOME=$(INSTALL_USER_HOME)' \
 		'Environment=NODE_ENV=production' \
