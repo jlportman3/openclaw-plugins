@@ -1,0 +1,12 @@
+{
+  "port": 4090,
+  "backends": {
+    "claude-code": {
+      "enabled": true,
+      "command": "claude",
+      "defaultModel": "sonnet",
+      "tools": false,
+      "sessionContinuity": true
+    }
+  }
+}
