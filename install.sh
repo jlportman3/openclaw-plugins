@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # Bootstrap: clone repo and run interactive setup.
-# Usage: bash <(curl -fsSL https://raw.githubusercontent.com/jlportman3/openclaw-plugins/main/install.sh)
+# Usage: curl -fsSL https://raw.githubusercontent.com/jlportman3/openclaw-plugins/main/install.sh | bash
 
 REPO="https://github.com/jlportman3/openclaw-plugins.git"
 DEST="${HOME}/openclaw-plugins"
@@ -27,4 +27,4 @@ fi
 # Hand off to interactive setup
 echo "  Launching setup.sh..."
 echo ""
-exec "$DEST/setup.sh"
+exec "$DEST/setup.sh" </dev/tty
