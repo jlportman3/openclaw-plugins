@@ -1,6 +1,7 @@
 import type { CliBackend, GatewayConfig } from "../types.ts";
 import { createClaudeCodeBackend } from "./claude-code.ts";
 import { createCodexBackend } from "./codex.ts";
+import { createGeminiBackend } from "./gemini.ts";
 
 const backendFactories: Record<
   string,
@@ -8,6 +9,7 @@ const backendFactories: Record<
 > = {
   "claude-code": createClaudeCodeBackend,
   "codex": createCodexBackend,
+  "gemini": createGeminiBackend,
 };
 
 const activeBackends = new Map<string, CliBackend>();

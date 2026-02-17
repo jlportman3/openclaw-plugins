@@ -48,6 +48,12 @@ const BACKEND_KEYS: Record<string, string[]> = {
     "OPENAI_API_KEY",
     "OPENAI_ORG_ID",
   ],
+  "gemini": [
+    "GEMINI_API_KEY",
+    "GOOGLE_API_KEY",
+    "GOOGLE_APPLICATION_CREDENTIALS",
+    "GOOGLE_CLOUD_PROJECT",
+  ],
 };
 
 /**
