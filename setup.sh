@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Show exactly where the script dies
+trap 'echo ""; echo "FATAL: setup.sh died at line $LINENO (exit code $?)" >&2' ERR
+
+# Set CLI_GATEWAY_DEBUG=1 to trace every command
+if [ "${CLI_GATEWAY_DEBUG:-}" = "1" ]; then
+    set -x
+fi
+
 # ============================================================
 # cli-gateway Production Setup
 # Interactive installer for Ubuntu 22.04+
