@@ -19,7 +19,7 @@ Plugins and tools for [OpenClaw](https://github.com/nicobailon/openclaw).
 
 ## cli-gateway
 
-OpenAI-compatible proxy that translates `/v1/chat/completions` requests into CLI subprocess calls. Use your Claude Code subscription (or Codex, Gemini CLI) as an LLM endpoint for OpenClaw or any OpenAI-compatible client.
+OpenAI-compatible proxy that translates `/v1/chat/completions` requests into CLI subprocess calls. Use your Claude Code, Codex, or Gemini CLI subscription as an LLM endpoint for OpenClaw or any OpenAI-compatible client.
 
 ### How It Works
 
@@ -30,20 +30,33 @@ OpenClaw / any OpenAI client
    cli-gateway (localhost:4090)
    /v1/chat/completions
         |
-        v
-   claude -p --output-format stream-json
-   (via PTY subprocess)
-        |
-        v
-   NDJSON -> SSE translation
+   +---------+---------+
+   |         |         |
+   v         v         v
+ Claude    Codex     Gemini
+  Code      CLI       CLI
+ (PTY)   (spawn)   (spawn)
+   |         |         |
+   v         v         v
+   NDJSON -> OpenAI SSE translation
 ```
 
-The gateway spawns CLI processes in a pseudo-terminal (PTY), parses their NDJSON output, and translates it to OpenAI-compatible SSE streams. Session state is owned by the CLI tool — only the latest user message is sent on each turn, with `--resume` for continuity.
+The gateway spawns CLI processes, parses their NDJSON output, and translates it to OpenAI-compatible SSE streams. Session state is owned by the CLI tool — only the latest user message is sent on each turn, with `--resume` for continuity.
+
+### Supported Backends
+
+| Backend | Command | Models | Spawn Method |
+|---------|---------|--------|-------------|
+| **Claude Code** | `claude` | `claude-code/sonnet`, `claude-code/opus`, `claude-code/haiku` | PTY (node-pty) |
+| **Codex CLI** | `codex` | `codex/gpt-5.3-codex`, `codex/o3`, `codex/o4-mini` | child_process |
+| **Gemini CLI** | `gemini` | `gemini/auto`, `gemini/gemini-2.5-pro`, `gemini/gemini-2.5-flash` | child_process |
+
+Backends are auto-detected at startup. If a CLI tool isn't installed, that backend is silently skipped.
 
 ### Quick Start
 
 ```bash
-# Prerequisites: Node.js 22+, Claude Code installed & authenticated
+# Prerequisites: Node.js 22+, at least one CLI tool installed & authenticated
 ./setup.sh
 ```
 
@@ -57,13 +70,19 @@ node --experimental-strip-types src/server.ts
 
 ### API
 
-- `GET /health` — Backend availability
-- `GET /v1/models` — List available models
+- `GET /health` — Backend availability and model counts
+- `GET /v1/models` — List all available models across backends
 - `POST /v1/chat/completions` — Chat completion (streaming & non-streaming)
 
 ### Model Names
 
-Format: `backend/model` — e.g., `claude-code/sonnet`, `claude-code/opus`, `claude-code/haiku`
+Format: `backend/model` — the backend prefix routes to the right CLI tool.
+
+```
+claude-code/sonnet       -> claude -p --model sonnet
+codex/gpt-5.3-codex     -> codex exec --json -m gpt-5.3-codex
+gemini/auto              -> gemini -p --model auto
+```
 
 ### Configuration
 
@@ -79,28 +98,49 @@ Edit `cli-gateway/config.json`:
       "defaultModel": "sonnet",
       "tools": false,
       "sessionContinuity": true
+    },
+    "codex": {
+      "enabled": true,
+      "command": "codex",
+      "defaultModel": "o4-mini",
+      "tools": false,
+      "sessionContinuity": true
+    },
+    "gemini": {
+      "enabled": true,
+      "command": "gemini",
+      "defaultModel": "auto",
+      "tools": false,
+      "sessionContinuity": true
     }
   }
 }
 ```
 
-Set `tools: true` to allow Claude Code to use its built-in tools (Bash, Edit, Read, etc.). This passes `--dangerously-skip-permissions` to the CLI — use with caution.
+Set `tools: true` to enable tool use. This passes permission-bypass flags to the CLI (`--dangerously-skip-permissions` for Claude, `--yolo` for Codex/Gemini) — **use with extreme caution**.
+
+### Environment Security
+
+The gateway scrubs the environment before spawning subprocesses. Only whitelisted system variables (`PATH`, `HOME`, `TERM`, etc.) and backend-specific auth keys are passed through. No `.env` secrets or stray API keys leak into child processes.
 
 ### Session Continuity
 
 Sessions are managed by the CLI tool. The proxy derives a session ID from the conversation's system prompt and first user message (SHA-256 hash). Pass `X-Session-Id` header for explicit session control.
 
-On the first request, `--session-id` starts a new conversation. Subsequent requests use `--resume` to continue the existing session, sending only the latest user message to conserve tokens.
+On the first request, a new session is started. Subsequent requests use `--resume` to continue the existing session, sending only the latest user message to conserve tokens.
 
 ### Dependencies
 
 - **Node.js 22+** — native TypeScript execution via `--experimental-strip-types`
-- **Claude Code** — `npm install -g @anthropic-ai/claude-code`
-- **node-pty** — PTY support (installed via `npm install`)
+- **node-pty** — PTY support for Claude Code (installed via `npm install`)
+- At least one CLI tool:
+  - **Claude Code** — `npm install -g @anthropic-ai/claude-code`
+  - **Codex CLI** — `npm install -g @openai/codex`
+  - **Gemini CLI** — `npm install -g @google/gemini-cli`
 
 ### Adding New Backends
 
-Create a new file in `cli-gateway/src/backends/` implementing the `CliBackend` interface, then register it in `backends/index.ts`. See `claude-code.ts` for reference.
+Create a new file in `cli-gateway/src/backends/` implementing the `CliBackend` interface, register it in `backends/index.ts`, and add auth keys to `util/clean-env.ts`. See `codex.ts` for the simplest reference.
 
 ### Design
 
