@@ -18,8 +18,12 @@ OPENCLAW_REPO     := https://github.com/openclaw/openclaw.git
 OPENCLAW_DIR      := $(INSTALL_DIR)/openclaw
 OPENCLAW_SERVICE  := openclaw-gateway
 OPENCLAW_PORT     := 18789
-OPENCLAW_SVC_FILE := /etc/systemd/system/$(OPENCLAW_SERVICE).service
-OPENCLAW_ENV_FILE := /etc/default/$(OPENCLAW_SERVICE)
+INSTALL_USER_ID   ?= $(shell id -u $(INSTALL_USER) 2>/dev/null)
+OPENCLAW_USER_DIR := $(INSTALL_USER_HOME)/.config/systemd/user
+OPENCLAW_SVC_FILE := $(OPENCLAW_USER_DIR)/$(OPENCLAW_SERVICE).service
+
+# Helper: run systemctl --user as INSTALL_USER with correct XDG_RUNTIME_DIR
+SYSTEMCTL_USER = sudo -u $(INSTALL_USER) XDG_RUNTIME_DIR=/run/user/$(INSTALL_USER_ID) systemctl --user
 
 # --- User (set by setup.sh, defaults to current user) ---
 INSTALL_USER      ?= $(shell whoami)
@@ -382,18 +386,19 @@ _openclaw-config:
 
 .PHONY: _openclaw-service
 _openclaw-service:
-	@echo "==> Installing OpenClaw gateway systemd service"
+	@echo "==> Installing OpenClaw gateway as user service"
+	@# Enable lingering so user services persist after logout/reboot
+	@loginctl enable-linger $(INSTALL_USER) 2>/dev/null || true
+	@# Create user service directory
+	@sudo -u $(INSTALL_USER) mkdir -p $(OPENCLAW_USER_DIR)
+	@# Write the unit file (owned by user)
 	@printf '%s\n' \
 		'[Unit]' \
 		'Description=OpenClaw Gateway' \
 		'Documentation=https://github.com/openclaw/openclaw' \
-		'After=network.target $(SERVICE_NAME).service' \
-		'Wants=$(SERVICE_NAME).service' \
 		'' \
 		'[Service]' \
 		'Type=simple' \
-		'User=$(INSTALL_USER)' \
-		'Group=$(INSTALL_USER)' \
 		'WorkingDirectory=$(OPENCLAW_DIR)' \
 		'ExecStart=$(NODE_BIN) dist/entry.js gateway run --port $(OPENCLAW_PORT)' \
 		'Restart=on-failure' \
@@ -401,68 +406,51 @@ _openclaw-service:
 		'StartLimitIntervalSec=60' \
 		'StartLimitBurst=3' \
 		'' \
-		'# Environment' \
-		'EnvironmentFile=-$(OPENCLAW_ENV_FILE)' \
 		'Environment=HOME=$(INSTALL_USER_HOME)' \
 		'Environment=NODE_ENV=production' \
 		'Environment=OPENCLAW_GATEWAY_PORT=$(OPENCLAW_PORT)' \
-		'' \
-		'# Security hardening' \
-		'NoNewPrivileges=true' \
-		'ProtectSystem=strict' \
-		'ReadWritePaths=$(INSTALL_DIR) $(INSTALL_USER_HOME)/.openclaw' \
-		'PrivateTmp=true' \
-		'' \
-		'# Resource limits' \
-		'LimitNOFILE=65536' \
-		'' \
-		'# Logging' \
-		'StandardOutput=journal' \
-		'StandardError=journal' \
-		'SyslogIdentifier=$(OPENCLAW_SERVICE)' \
+		'Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$(INSTALL_USER_HOME)/.local/bin:$(OPENCLAW_DIR)/node_modules/.bin' \
+		'Environment=XAUTHORITY=$(INSTALL_USER_HOME)/.Xauthority' \
 		'' \
 		'[Install]' \
-		'WantedBy=multi-user.target' \
+		'WantedBy=default.target' \
 		> $(OPENCLAW_SVC_FILE)
-	@printf '%s\n' \
-		'# openclaw-gateway environment' \
-		'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$(INSTALL_USER_HOME)/.local/bin:$(OPENCLAW_DIR)/node_modules/.bin' \
-		'XAUTHORITY=$(INSTALL_USER_HOME)/.Xauthority' \
-		> $(OPENCLAW_ENV_FILE)
-	@chmod 640 $(OPENCLAW_ENV_FILE)
-	@systemctl daemon-reload
-	@systemctl enable $(OPENCLAW_SERVICE) --quiet
-	@systemctl start $(OPENCLAW_SERVICE)
+	@chown $(INSTALL_USER):$(INSTALL_USER) $(OPENCLAW_SVC_FILE)
+	@# Reload, enable, and start as the user
+	@$(SYSTEMCTL_USER) daemon-reload
+	@$(SYSTEMCTL_USER) enable $(OPENCLAW_SERVICE) --quiet
+	@$(SYSTEMCTL_USER) restart $(OPENCLAW_SERVICE)
 	@sleep 3
-	@if systemctl is-active --quiet $(OPENCLAW_SERVICE); then \
+	@if $(SYSTEMCTL_USER) is-active --quiet $(OPENCLAW_SERVICE); then \
 		echo "  ✓ OpenClaw gateway service running (port $(OPENCLAW_PORT))"; \
 	else \
-		echo "  ⚠ Service may still be starting. Check: journalctl -u $(OPENCLAW_SERVICE) --no-pager -n 30"; \
+		echo "  ⚠ Service may still be starting. Check:"; \
+		echo "    $(SYSTEMCTL_USER) status $(OPENCLAW_SERVICE)"; \
 	fi
 
 .PHONY: openclaw-start
 openclaw-start:
-	sudo systemctl start $(OPENCLAW_SERVICE)
+	$(SYSTEMCTL_USER) start $(OPENCLAW_SERVICE)
 	@echo "  ✓ Started"
 
 .PHONY: openclaw-stop
 openclaw-stop:
-	sudo systemctl stop $(OPENCLAW_SERVICE)
+	$(SYSTEMCTL_USER) stop $(OPENCLAW_SERVICE)
 	@echo "  ✓ Stopped"
 
 .PHONY: openclaw-restart
 openclaw-restart:
-	sudo systemctl restart $(OPENCLAW_SERVICE)
+	$(SYSTEMCTL_USER) restart $(OPENCLAW_SERVICE)
 	@echo "  ✓ Restarted"
 
 .PHONY: openclaw-status
 openclaw-status:
 	@echo "==> OpenClaw Gateway Status"
-	@systemctl status $(OPENCLAW_SERVICE) --no-pager 2>/dev/null || echo "  Service not found"
+	@$(SYSTEMCTL_USER) status $(OPENCLAW_SERVICE) --no-pager 2>/dev/null || echo "  Service not found"
 
 .PHONY: openclaw-logs
 openclaw-logs:
-	sudo journalctl -fu $(OPENCLAW_SERVICE)
+	journalctl --user -u $(OPENCLAW_SERVICE) -f
 
 # --- Standalone config for existing OpenClaw installs ---
 .PHONY: configure

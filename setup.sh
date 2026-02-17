@@ -335,9 +335,13 @@ deploy_service() {
 install_openclaw() {
     step "Phase 9: Installing OpenClaw"
 
+    # XDG_RUNTIME_DIR is needed for systemctl --user to work
+    export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+
     sudo make -C "$SCRIPT_DIR" openclaw-install \
         INSTALL_USER="$(whoami)" \
         INSTALL_USER_HOME="$HOME" \
+        INSTALL_USER_ID="$(id -u)" \
         INSTALL_CLAUDE="$INSTALL_CLAUDE" \
         INSTALL_CODEX="$INSTALL_CODEX" \
         INSTALL_GEMINI="$INSTALL_GEMINI"
@@ -350,18 +354,19 @@ show_summary() {
     step "Setup Complete!"
     echo ""
     echo "  Both services are running:"
-    echo "    ${BOLD}cli-gateway${NC}      — systemd service on port ${GATEWAY_PORT}"
+    echo "    ${BOLD}cli-gateway${NC}      — system service on port ${GATEWAY_PORT}"
     echo "    ${BOLD}OpenClaw gateway${NC} — user service on port 18789"
     echo ""
-    echo "  ${BOLD}cli-gateway management:${NC}"
-    echo "    make -C ${SCRIPT_DIR} status     # service status + health check"
-    echo "    make -C ${SCRIPT_DIR} logs       # follow service logs"
-    echo "    make -C ${SCRIPT_DIR} restart    # restart the service"
-    echo "    make -C ${SCRIPT_DIR} test       # run smoke tests"
+    echo "  ${BOLD}cli-gateway:${NC}"
+    echo "    make -C ${SCRIPT_DIR} status     # status + health check"
+    echo "    make -C ${SCRIPT_DIR} logs       # follow logs"
+    echo "    make -C ${SCRIPT_DIR} restart    # restart"
+    echo "    make -C ${SCRIPT_DIR} test       # smoke tests"
     echo ""
-    echo "  ${BOLD}OpenClaw management:${NC}"
-    echo "    make -C ${SCRIPT_DIR} openclaw-status  # service status"
-    echo "    make -C ${SCRIPT_DIR} openclaw-logs    # follow logs"
+    echo "  ${BOLD}OpenClaw:${NC}"
+    echo "    make -C ${SCRIPT_DIR} openclaw-status   # status"
+    echo "    make -C ${SCRIPT_DIR} openclaw-logs     # follow logs"
+    echo "    make -C ${SCRIPT_DIR} openclaw-restart  # restart"
     echo ""
     echo "  ${BOLD}Quick test:${NC}"
     echo "    curl http://localhost:${GATEWAY_PORT}/health"
