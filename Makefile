@@ -322,10 +322,9 @@ uninstall:
 # OpenClaw integration
 # ============================================================
 .PHONY: openclaw-install
-openclaw-install: _openclaw-clone _openclaw-build _openclaw-config
+openclaw-install: _openclaw-clone _openclaw-build _openclaw-config _openclaw-service
 	@echo ""
-	@echo "  ✓ OpenClaw installed and configured"
-	@echo "  Start with: make openclaw-start"
+	@echo "  ✓ OpenClaw installed, configured, and running as a service"
 	@echo ""
 
 .PHONY: _openclaw-clone
@@ -350,14 +349,36 @@ _openclaw-config:
 	@mkdir -p $(INSTALL_USER_HOME)/.openclaw
 	@echo "$$GENERATE_OPENCLAW_CONFIG" | python3
 
+.PHONY: _openclaw-service
+_openclaw-service:
+	@echo "==> Installing OpenClaw gateway as user service"
+	@# Enable lingering so user services survive logout
+	@loginctl enable-linger $(INSTALL_USER) 2>/dev/null || true
+	@# Use OpenClaw's built-in systemd integration
+	@cd $(OPENCLAW_DIR) && node dist/entry.js gateway install --force 2>&1 || \
+		cd $(OPENCLAW_DIR) && pnpm start gateway install --force 2>&1
+	@sleep 2
+	@if systemctl --user is-active --quiet openclaw-gateway 2>/dev/null; then \
+		echo "  ✓ OpenClaw gateway service running (port 18789)"; \
+	else \
+		echo "  ⚠ Service may still be starting. Check: systemctl --user status openclaw-gateway"; \
+	fi
+
 .PHONY: openclaw-start
 openclaw-start:
-	@echo "==> Starting OpenClaw"
-	@if [ ! -d "$(OPENCLAW_DIR)/dist" ]; then \
-		echo "  Error: OpenClaw not built. Run 'make openclaw-install' first."; \
-		exit 1; \
-	fi
-	@cd $(OPENCLAW_DIR) && pnpm start
+	systemctl --user start openclaw-gateway
+
+.PHONY: openclaw-stop
+openclaw-stop:
+	systemctl --user stop openclaw-gateway
+
+.PHONY: openclaw-status
+openclaw-status:
+	@systemctl --user status openclaw-gateway --no-pager 2>/dev/null || echo "  Service not found"
+
+.PHONY: openclaw-logs
+openclaw-logs:
+	journalctl --user -u openclaw-gateway -f
 
 # ============================================================
 # Cleanup
@@ -390,8 +411,11 @@ help:
 	@echo "    test             Smoke tests against running service"
 	@echo ""
 	@echo "  OpenClaw:"
-	@echo "    openclaw-install Clone, build, and configure OpenClaw"
-	@echo "    openclaw-start   Start OpenClaw"
+	@echo "    openclaw-install Clone, build, configure, and start OpenClaw"
+	@echo "    openclaw-start   Start OpenClaw gateway service"
+	@echo "    openclaw-stop    Stop OpenClaw gateway service"
+	@echo "    openclaw-status  OpenClaw gateway service status"
+	@echo "    openclaw-logs    Follow OpenClaw gateway logs"
 	@echo ""
 	@echo "  Other:"
 	@echo "    clean            Remove local build artifacts"
