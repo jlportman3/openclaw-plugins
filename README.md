@@ -55,13 +55,13 @@ Backends are auto-detected at startup. If a CLI tool isn't installed, that backe
 
 ### Quick Start
 
-One line, fresh Ubuntu 22.04+ server:
+Fresh Ubuntu 22.04+ server:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jlportman3/openclaw-plugins/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/jlportman3/openclaw-plugins/main/install.sh | sudo bash; ~/openclaw-plugins/setup.sh
 ```
 
-This installs all system dependencies, lets you pick which CLI tools to install (Claude Code, Codex, Gemini), walks you through authentication, and deploys cli-gateway as a systemd service.
+The bootstrap script configures passwordless sudo and clones the repo. Then `setup.sh` interactively installs dependencies, lets you pick CLI backends (Claude Code, Codex, Gemini), walks you through authentication, deploys cli-gateway as a systemd service, and installs OpenClaw.
 
 ### Manual Start
 

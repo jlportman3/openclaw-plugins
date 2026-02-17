@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# Bootstrap: clone repo, configure sudoers, run interactive setup.
-# Usage: curl -fsSL https://raw.githubusercontent.com/jlportman3/openclaw-plugins/main/install.sh | sudo bash
+# Bootstrap: clone repo, configure sudoers.
+# Usage: curl -fsSL https://raw.githubusercontent.com/jlportman3/openclaw-plugins/main/install.sh | sudo bash; ~/openclaw-plugins/setup.sh
 
 REPO="https://github.com/jlportman3/openclaw-plugins.git"
 
@@ -61,16 +61,9 @@ else
     sudo -u "$TARGET_USER" git clone "$REPO" "$DEST"
 fi
 
-# --- Hand off to setup.sh as the user ---
-echo "  Launching setup.sh as $TARGET_USER..."
 echo ""
-# Use 'script' to allocate a real PTY — solves terminal I/O issues
-# when running under 'curl | sudo bash' pipe chains.
-script -qc "su - $TARGET_USER -c 'bash $DEST/setup.sh'" /dev/null </dev/tty
-EXIT_CODE=$?
-if [ $EXIT_CODE -ne 0 ]; then
-    echo ""
-    echo "  setup.sh exited with code $EXIT_CODE"
-    echo "  To retry manually: $DEST/setup.sh"
-fi
-exit $EXIT_CODE
+echo "  ✓ Bootstrap complete!"
+echo ""
+echo "  Now run the interactive setup:"
+echo "    $DEST/setup.sh"
+echo ""

@@ -330,12 +330,27 @@ deploy_service() {
 }
 
 # ============================================================
+# Phase 9: Install OpenClaw
+# ============================================================
+install_openclaw() {
+    step "Phase 9: Installing OpenClaw"
+
+    make -C "$SCRIPT_DIR" openclaw-install \
+        INSTALL_USER="$(whoami)" \
+        INSTALL_USER_HOME="$HOME" \
+        INSTALL_CLAUDE="$INSTALL_CLAUDE" \
+        INSTALL_CODEX="$INSTALL_CODEX" \
+        INSTALL_GEMINI="$INSTALL_GEMINI"
+}
+
+# ============================================================
 # Summary
 # ============================================================
 show_summary() {
     step "Setup Complete!"
     echo ""
     echo "  cli-gateway is running as a systemd service on port ${GATEWAY_PORT}."
+    echo "  OpenClaw is installed and configured."
     echo ""
     echo "  ${BOLD}Service management:${NC}"
     echo "    make -C ${SCRIPT_DIR} status     # service status + health check"
@@ -343,8 +358,7 @@ show_summary() {
     echo "    make -C ${SCRIPT_DIR} restart    # restart the service"
     echo "    make -C ${SCRIPT_DIR} test       # run smoke tests"
     echo ""
-    echo "  ${BOLD}Install OpenClaw (optional):${NC}"
-    echo "    make -C ${SCRIPT_DIR} openclaw-install"
+    echo "  ${BOLD}Start OpenClaw:${NC}"
     echo "    make -C ${SCRIPT_DIR} openclaw-start"
     echo ""
     echo "  ${BOLD}Quick test:${NC}"
@@ -358,7 +372,7 @@ show_summary() {
 main() {
     echo ""
     echo -e "${BOLD}=============================================${NC}"
-    echo -e "${BOLD}  cli-gateway Production Setup${NC}"
+    echo -e "${BOLD}  cli-gateway + OpenClaw Production Setup${NC}"
     echo -e "${BOLD}  Ubuntu 22.04+ | systemd service${NC}"
     echo -e "${BOLD}=============================================${NC}"
 
@@ -370,6 +384,7 @@ main() {
     install_cli_tools
     authenticate_backends
     deploy_service
+    install_openclaw
     show_summary
 }
 
