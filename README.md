@@ -55,10 +55,13 @@ Backends are auto-detected at startup. If a CLI tool isn't installed, that backe
 
 ### Quick Start
 
+One line, fresh Ubuntu 22.04+ server:
+
 ```bash
-# Prerequisites: Node.js 22+, at least one CLI tool installed & authenticated
-./setup.sh
+curl -fsSL https://raw.githubusercontent.com/jlportman3/openclaw-plugins/main/install.sh | sudo bash
 ```
+
+This installs all system dependencies, lets you pick which CLI tools to install (Claude Code, Codex, Gemini), walks you through authentication, and deploys cli-gateway as a systemd service.
 
 ### Manual Start
 
