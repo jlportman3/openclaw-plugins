@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { which } from "../util/which.ts";
+import { cleanEnv } from "../util/clean-env.ts";
 import type {
   BackendConfig,
   ChatChunk,
@@ -109,6 +110,7 @@ export function createCodexBackend(config: BackendConfig): CliBackend {
 
       const child = spawn(command, args, {
         cwd: process.cwd(),
+        env: cleanEnv("codex"),
         stdio: ["ignore", "pipe", "pipe"],
       });
 

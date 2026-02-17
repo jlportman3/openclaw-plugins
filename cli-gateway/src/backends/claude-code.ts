@@ -1,5 +1,6 @@
 import * as pty from "node-pty";
 import { which } from "../util/which.ts";
+import { cleanEnv } from "../util/clean-env.ts";
 import type {
   BackendConfig,
   ChatChunk,
@@ -92,18 +93,12 @@ export function createClaudeCodeBackend(config: BackendConfig): CliBackend {
       // This prevents variadic flags (--tools, --allowedTools) from consuming the prompt
       args.push("--", prompt);
 
-      // Filter out undefined env values (node-pty requires all strings)
-      const cleanEnv: Record<string, string> = {};
-      for (const [k, v] of Object.entries(process.env)) {
-        if (v !== undefined) cleanEnv[k] = v;
-      }
-
       const ptyProcess = pty.spawn(command, args, {
         name: "xterm-256color",
         cols: 200,
         rows: 50,
         cwd: process.cwd(),
-        env: cleanEnv,
+        env: cleanEnv("claude-code"),
       });
 
       // Buffer for incomplete lines from PTY
