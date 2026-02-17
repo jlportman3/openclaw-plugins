@@ -1,5 +1,20 @@
 # openclaw-plugins
 
+> [!CAUTION]
+> ## USE AT YOUR OWN RISK
+>
+> This software is provided **"AS IS"**, without warranty of any kind, express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose, and noninfringement.
+>
+> **This tool spawns CLI subprocesses with the ability to execute arbitrary code on your machine.** If you enable `tools: true`, it passes `--dangerously-skip-permissions` to the CLI, which means **it can read, write, and delete files, run shell commands, and generally do whatever it wants to your system without asking.**
+>
+> If this software **nukes your system**, **eats your homework**, **maxes out your API bill**, **deletes your production database**, **emails your browser history to your boss**, or **achieves sentience and orders 10,000 rubber ducks to your house** — that is entirely on you. Do not come crying to us. You were warned.
+>
+> **NO WARRANTY. NO LIABILITY. NO REFUNDS. NO SYMPATHY.**
+>
+> By using this software you acknowledge that you have read this disclaimer, understood the risks, and have accepted that the consequences of running autonomous AI agents with filesystem access are **your problem and yours alone.**
+
+---
+
 Plugins and tools for [OpenClaw](https://github.com/nicobailon/openclaw).
 
 ## cli-gateway
