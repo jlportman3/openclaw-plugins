@@ -335,7 +335,7 @@ deploy_service() {
 install_openclaw() {
     step "Phase 9: Installing OpenClaw"
 
-    make -C "$SCRIPT_DIR" openclaw-install \
+    sudo make -C "$SCRIPT_DIR" openclaw-install \
         INSTALL_USER="$(whoami)" \
         INSTALL_USER_HOME="$HOME" \
         INSTALL_CLAUDE="$INSTALL_CLAUDE" \

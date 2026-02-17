@@ -14,8 +14,12 @@ SCRIPT_DIR     := $(shell cd "$(dir $(lastword $(MAKEFILE_LIST)))" && pwd)
 GATEWAY_SRC    := $(SCRIPT_DIR)/cli-gateway
 SERVICE_FILE   := /etc/systemd/system/$(SERVICE_NAME).service
 ENV_FILE       := /etc/default/$(SERVICE_NAME)
-OPENCLAW_REPO  := https://github.com/openclaw/openclaw.git
-OPENCLAW_DIR   := $(INSTALL_DIR)/openclaw
+OPENCLAW_REPO     := https://github.com/openclaw/openclaw.git
+OPENCLAW_DIR      := $(INSTALL_DIR)/openclaw
+OPENCLAW_SERVICE  := openclaw-gateway
+OPENCLAW_PORT     := 18789
+OPENCLAW_SVC_FILE := /etc/systemd/system/$(OPENCLAW_SERVICE).service
+OPENCLAW_ENV_FILE := /etc/default/$(OPENCLAW_SERVICE)
 
 # --- User (set by setup.sh, defaults to current user) ---
 INSTALL_USER      ?= $(shell whoami)
@@ -166,6 +170,9 @@ _install-env:
 		'# claude may be in ~/.local/bin; codex/gemini in /usr/bin or /usr/local/bin.' \
 		'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$(INSTALL_USER_HOME)/.local/bin' \
 		'' \
+		'# X11 auth for browser-based OAuth flows' \
+		'XAUTHORITY=$(INSTALL_USER_HOME)/.Xauthority' \
+		'' \
 		'# Uncomment to use API keys instead of (or alongside) OAuth:' \
 		'# ANTHROPIC_API_KEY=' \
 		'# OPENAI_API_KEY=' \
@@ -202,7 +209,7 @@ _install-service:
 		'# Security hardening' \
 		'NoNewPrivileges=true' \
 		'ProtectSystem=strict' \
-		'ReadWritePaths=$(INSTALL_DIR)' \
+		'ReadWritePaths=$(INSTALL_DIR) $(INSTALL_USER_HOME)/.claude $(INSTALL_USER_HOME)/.codex $(INSTALL_USER_HOME)/.gemini $(INSTALL_USER_HOME)/.config' \
 		'PrivateTmp=true' \
 		'' \
 		'# Resource limits' \
@@ -345,20 +352,24 @@ _openclaw-build:
 
 .PHONY: _openclaw-path
 _openclaw-path:
-	@echo "==> Adding openclaw to PATH"
-	@# Symlink into /usr/local/bin for immediate use
-	@if [ -f "$(OPENCLAW_DIR)/node_modules/.bin/openclaw" ]; then \
-		sudo ln -sf "$(OPENCLAW_DIR)/node_modules/.bin/openclaw" /usr/local/bin/openclaw; \
-		echo "  ✓ Symlinked openclaw → /usr/local/bin/openclaw"; \
-	fi
-	@# Also add to .bashrc for future sessions
+	@echo "==> Adding openclaw to PATH and configuring environment"
+	@# Create wrapper script in /usr/local/bin (works regardless of node_modules layout)
+	@printf '%s\n' \
+		'#!/usr/bin/env bash' \
+		'exec node "$(OPENCLAW_DIR)/dist/entry.js" "$$@"' \
+		> /usr/local/bin/openclaw
+	@chmod +x /usr/local/bin/openclaw
+	@echo "  ✓ Created /usr/local/bin/openclaw"
+	@# Add PATH + XAUTHORITY to .bashrc for future sessions
 	@BASHRC="$(INSTALL_USER_HOME)/.bashrc"; \
-	PATHLINE='export PATH="$(OPENCLAW_DIR)/node_modules/.bin:$$PATH"'; \
-	if ! grep -qF "$(OPENCLAW_DIR)/node_modules/.bin" "$$BASHRC" 2>/dev/null; then \
-		echo "" >> "$$BASHRC"; \
-		echo "# OpenClaw CLI" >> "$$BASHRC"; \
-		echo "$$PATHLINE" >> "$$BASHRC"; \
-		echo "  ✓ Added to $$BASHRC"; \
+	if ! grep -qF "# cli-gateway environment" "$$BASHRC" 2>/dev/null; then \
+		printf '\n%s\n%s\n%s\n' \
+			'# cli-gateway environment' \
+			'export PATH="$(OPENCLAW_DIR)/node_modules/.bin:$$PATH"' \
+			'export XAUTHORITY="$$HOME/.Xauthority"' \
+			>> "$$BASHRC"; \
+		chown $(INSTALL_USER):$(INSTALL_USER) "$$BASHRC"; \
+		echo "  ✓ Updated $$BASHRC (PATH + XAUTHORITY)"; \
 	else \
 		echo "  Already in $$BASHRC"; \
 	fi
@@ -371,34 +382,87 @@ _openclaw-config:
 
 .PHONY: _openclaw-service
 _openclaw-service:
-	@echo "==> Installing OpenClaw gateway as user service"
-	@# Enable lingering so user services survive logout
-	@loginctl enable-linger $(INSTALL_USER) 2>/dev/null || true
-	@# Use OpenClaw's built-in systemd integration
-	@cd $(OPENCLAW_DIR) && node dist/entry.js gateway install --force 2>&1 || \
-		cd $(OPENCLAW_DIR) && pnpm start gateway install --force 2>&1
-	@sleep 2
-	@if systemctl --user is-active --quiet openclaw-gateway 2>/dev/null; then \
-		echo "  ✓ OpenClaw gateway service running (port 18789)"; \
+	@echo "==> Installing OpenClaw gateway systemd service"
+	@printf '%s\n' \
+		'[Unit]' \
+		'Description=OpenClaw Gateway' \
+		'Documentation=https://github.com/openclaw/openclaw' \
+		'After=network.target $(SERVICE_NAME).service' \
+		'Wants=$(SERVICE_NAME).service' \
+		'' \
+		'[Service]' \
+		'Type=simple' \
+		'User=$(INSTALL_USER)' \
+		'Group=$(INSTALL_USER)' \
+		'WorkingDirectory=$(OPENCLAW_DIR)' \
+		'ExecStart=$(NODE_BIN) dist/entry.js gateway run --port $(OPENCLAW_PORT)' \
+		'Restart=on-failure' \
+		'RestartSec=5' \
+		'StartLimitIntervalSec=60' \
+		'StartLimitBurst=3' \
+		'' \
+		'# Environment' \
+		'EnvironmentFile=-$(OPENCLAW_ENV_FILE)' \
+		'Environment=HOME=$(INSTALL_USER_HOME)' \
+		'Environment=NODE_ENV=production' \
+		'Environment=OPENCLAW_GATEWAY_PORT=$(OPENCLAW_PORT)' \
+		'' \
+		'# Security hardening' \
+		'NoNewPrivileges=true' \
+		'ProtectSystem=strict' \
+		'ReadWritePaths=$(INSTALL_DIR) $(INSTALL_USER_HOME)/.openclaw' \
+		'PrivateTmp=true' \
+		'' \
+		'# Resource limits' \
+		'LimitNOFILE=65536' \
+		'' \
+		'# Logging' \
+		'StandardOutput=journal' \
+		'StandardError=journal' \
+		'SyslogIdentifier=$(OPENCLAW_SERVICE)' \
+		'' \
+		'[Install]' \
+		'WantedBy=multi-user.target' \
+		> $(OPENCLAW_SVC_FILE)
+	@printf '%s\n' \
+		'# openclaw-gateway environment' \
+		'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$(INSTALL_USER_HOME)/.local/bin:$(OPENCLAW_DIR)/node_modules/.bin' \
+		'XAUTHORITY=$(INSTALL_USER_HOME)/.Xauthority' \
+		> $(OPENCLAW_ENV_FILE)
+	@chmod 640 $(OPENCLAW_ENV_FILE)
+	@systemctl daemon-reload
+	@systemctl enable $(OPENCLAW_SERVICE) --quiet
+	@systemctl start $(OPENCLAW_SERVICE)
+	@sleep 3
+	@if systemctl is-active --quiet $(OPENCLAW_SERVICE); then \
+		echo "  ✓ OpenClaw gateway service running (port $(OPENCLAW_PORT))"; \
 	else \
-		echo "  ⚠ Service may still be starting. Check: systemctl --user status openclaw-gateway"; \
+		echo "  ⚠ Service may still be starting. Check: journalctl -u $(OPENCLAW_SERVICE) --no-pager -n 30"; \
 	fi
 
 .PHONY: openclaw-start
 openclaw-start:
-	systemctl --user start openclaw-gateway
+	sudo systemctl start $(OPENCLAW_SERVICE)
+	@echo "  ✓ Started"
 
 .PHONY: openclaw-stop
 openclaw-stop:
-	systemctl --user stop openclaw-gateway
+	sudo systemctl stop $(OPENCLAW_SERVICE)
+	@echo "  ✓ Stopped"
+
+.PHONY: openclaw-restart
+openclaw-restart:
+	sudo systemctl restart $(OPENCLAW_SERVICE)
+	@echo "  ✓ Restarted"
 
 .PHONY: openclaw-status
 openclaw-status:
-	@systemctl --user status openclaw-gateway --no-pager 2>/dev/null || echo "  Service not found"
+	@echo "==> OpenClaw Gateway Status"
+	@systemctl status $(OPENCLAW_SERVICE) --no-pager 2>/dev/null || echo "  Service not found"
 
 .PHONY: openclaw-logs
 openclaw-logs:
-	journalctl --user -u openclaw-gateway -f
+	sudo journalctl -fu $(OPENCLAW_SERVICE)
 
 # --- Standalone config for existing OpenClaw installs ---
 .PHONY: configure
@@ -450,6 +514,7 @@ help:
 	@echo "    openclaw-install Clone, build, configure, and start OpenClaw"
 	@echo "    openclaw-start   Start OpenClaw gateway service"
 	@echo "    openclaw-stop    Stop OpenClaw gateway service"
+	@echo "    openclaw-restart Restart OpenClaw gateway service"
 	@echo "    openclaw-status  OpenClaw gateway service status"
 	@echo "    openclaw-logs    Follow OpenClaw gateway logs"
 	@echo "    configure        Write ~/.openclaw/openclaw.json (existing installs)"
