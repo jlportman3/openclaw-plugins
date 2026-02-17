@@ -12,14 +12,14 @@
       "enabled": true,
       "command": "codex",
       "defaultModel": "o4-mini",
-      "tools": false,
+      "tools": true,
       "sessionContinuity": true
     },
     "gemini": {
       "enabled": true,
       "command": "gemini",
       "defaultModel": "auto",
-      "tools": false,
+      "tools": true,
       "sessionContinuity": true
     }
   }

@@ -45,9 +45,9 @@ config = {"port": $(GATEWAY_PORT), "backends": {}}
 if "$(INSTALL_CLAUDE)" == "true":
     config["backends"]["claude-code"] = {"enabled": True, "command": "claude", "defaultModel": "sonnet", "tools": True, "sessionContinuity": True}
 if "$(INSTALL_CODEX)" == "true":
-    config["backends"]["codex"] = {"enabled": True, "command": "codex", "defaultModel": "o4-mini", "tools": False, "sessionContinuity": True}
+    config["backends"]["codex"] = {"enabled": True, "command": "codex", "defaultModel": "o4-mini", "tools": True, "sessionContinuity": True}
 if "$(INSTALL_GEMINI)" == "true":
-    config["backends"]["gemini"] = {"enabled": True, "command": "gemini", "defaultModel": "auto", "tools": False, "sessionContinuity": True}
+    config["backends"]["gemini"] = {"enabled": True, "command": "gemini", "defaultModel": "auto", "tools": True, "sessionContinuity": True}
 with open("$(INSTALL_DIR)/config.json", "w") as f:
     json.dump(config, f, indent=2)
     f.write("\n")
