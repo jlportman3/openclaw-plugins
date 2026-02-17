@@ -322,7 +322,7 @@ uninstall:
 # OpenClaw integration
 # ============================================================
 .PHONY: openclaw-install
-openclaw-install: _openclaw-clone _openclaw-build _openclaw-config _openclaw-service
+openclaw-install: _openclaw-clone _openclaw-build _openclaw-path _openclaw-config _openclaw-service
 	@echo ""
 	@echo "  ✓ OpenClaw installed, configured, and running as a service"
 	@echo ""
@@ -342,6 +342,26 @@ _openclaw-build:
 	@cd $(OPENCLAW_DIR) && pnpm install --frozen-lockfile 2>/dev/null || cd $(OPENCLAW_DIR) && pnpm install
 	@echo "==> Building OpenClaw"
 	@cd $(OPENCLAW_DIR) && pnpm build
+
+.PHONY: _openclaw-path
+_openclaw-path:
+	@echo "==> Adding openclaw to PATH"
+	@# Symlink into /usr/local/bin for immediate use
+	@if [ -f "$(OPENCLAW_DIR)/node_modules/.bin/openclaw" ]; then \
+		sudo ln -sf "$(OPENCLAW_DIR)/node_modules/.bin/openclaw" /usr/local/bin/openclaw; \
+		echo "  ✓ Symlinked openclaw → /usr/local/bin/openclaw"; \
+	fi
+	@# Also add to .bashrc for future sessions
+	@BASHRC="$(INSTALL_USER_HOME)/.bashrc"; \
+	PATHLINE='export PATH="$(OPENCLAW_DIR)/node_modules/.bin:$$PATH"'; \
+	if ! grep -qF "$(OPENCLAW_DIR)/node_modules/.bin" "$$BASHRC" 2>/dev/null; then \
+		echo "" >> "$$BASHRC"; \
+		echo "# OpenClaw CLI" >> "$$BASHRC"; \
+		echo "$$PATHLINE" >> "$$BASHRC"; \
+		echo "  ✓ Added to $$BASHRC"; \
+	else \
+		echo "  Already in $$BASHRC"; \
+	fi
 
 .PHONY: _openclaw-config
 _openclaw-config:
