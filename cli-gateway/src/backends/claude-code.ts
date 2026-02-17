@@ -57,15 +57,17 @@ export function createClaudeCodeBackend(config: BackendConfig): CliBackend {
         req.model,
       ];
 
-      if (req.systemPrompt) {
-        args.push("--system-prompt", req.systemPrompt);
-      }
-
       if (req.isNewConversation) {
         args.push("--session-id", req.sessionId);
+        // Only set system prompt on new conversations; resumed sessions already have it
+        if (req.systemPrompt) {
+          args.push("--system-prompt", req.systemPrompt);
+        }
       } else {
         args.push("--resume", req.sessionId);
       }
+
+      console.log(`[claude-code] session=${req.sessionId} new=${req.isNewConversation} msgs=${req.messages.length}`);
 
       if (!req.tools) {
         args.push("--tools", "");

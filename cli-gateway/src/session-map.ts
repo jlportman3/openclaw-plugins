@@ -28,11 +28,12 @@ export function isNewConversation(
   sessionId: string,
   messageCount: number,
 ): boolean {
-  const entry = sessions.get(sessionId);
-  if (!entry) return true;
-  // If client sends fewer messages than we've seen, assume fresh start
-  if (messageCount <= 2) return !sessions.has(sessionId);
-  return false;
+  // If client sends >2 messages (system+user+assistant+user...), this is
+  // clearly a continuation — use --resume regardless of in-memory state.
+  // This survives service restarts since Claude stores sessions on disk.
+  if (messageCount > 2) return false;
+  // For 1-2 messages, check if we've seen this session before
+  return !sessions.has(sessionId);
 }
 
 export function trackSession(
