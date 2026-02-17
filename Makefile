@@ -493,6 +493,8 @@ _openclaw-service:
 	@sleep 3
 	@if $(SYSTEMCTL_USER) is-active --quiet $(OPENCLAW_SERVICE); then \
 		echo "  ✓ OpenClaw gateway service running (port $(OPENCLAW_PORT))"; \
+		TOKEN=$$(python3 -c "import json; print(json.load(open('$(INSTALL_USER_HOME)/.openclaw/openclaw.json'))['gateway']['auth']['token'])" 2>/dev/null) && \
+		echo "  ✓ Auth token: $$TOKEN"; \
 	else \
 		echo "  ⚠ Service may still be starting. Check:"; \
 		echo "    $(SYSTEMCTL_USER) status $(OPENCLAW_SERVICE)"; \
