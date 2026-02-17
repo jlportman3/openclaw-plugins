@@ -64,4 +64,4 @@ fi
 # --- Hand off to setup.sh as the user ---
 echo "  Launching setup.sh as $TARGET_USER..."
 echo ""
-exec su - "$TARGET_USER" -c "$DEST/setup.sh" </dev/tty
+exec su - "$TARGET_USER" -c "$DEST/setup.sh" </dev/tty >/dev/tty 2>&1
