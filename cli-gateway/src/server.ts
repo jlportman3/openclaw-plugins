@@ -25,6 +25,7 @@ import {
   getAllBackends,
   parseModelId,
 } from "./backends/index.ts";
+import { stripMetadata } from "./util/strip-metadata.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const configPath = resolve(__dirname, "..", "config.json");
@@ -114,6 +115,9 @@ async function handleChatCompletions(
   if (!Array.isArray(body.messages) || body.messages.length === 0) {
     return errorResponse(res, 400, "Missing required field: messages");
   }
+
+  // Strip OpenClaw metadata wrappers from user messages
+  body.messages = stripMetadata(body.messages);
 
   console.log(`[REQ] model=${body.model} stream=${body.stream} messages=${body.messages.length} roles=[${body.messages.map((m: OpenAIMessage) => m.role).join(",")}]`);
 
