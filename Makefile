@@ -60,7 +60,7 @@ define GENERATE_OPENCLAW_CONFIG
 import json
 base = "http://localhost:$(GATEWAY_PORT)/v1"
 cost = {"input":0,"output":0,"cacheRead":0,"cacheWrite":0}
-config = {"gateway": {"port": $(OPENCLAW_PORT), "mode": "local", "bind": "lan", "auth": {"mode": "none"}}, "models": {"mode": "merge", "providers": {}}, "agents": {"defaults": {"model": {}, "models": {}}}}
+config = {"gateway": {"port": $(OPENCLAW_PORT), "mode": "local", "bind": "lan"}, "models": {"mode": "merge", "providers": {}}, "agents": {"defaults": {"model": {}, "models": {}}}}
 providers = config["models"]["providers"]
 aliases = config["agents"]["defaults"]["models"]
 first = None
