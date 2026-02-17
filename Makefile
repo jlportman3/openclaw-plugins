@@ -379,13 +379,15 @@ _openclaw-clone:
 		echo "==> Cloning OpenClaw"; \
 		git clone $(OPENCLAW_REPO) $(OPENCLAW_DIR); \
 	fi
+	@chown -R $(INSTALL_USER):$(INSTALL_USER) $(OPENCLAW_DIR)
 
 .PHONY: _openclaw-build
 _openclaw-build:
 	@echo "==> Installing OpenClaw dependencies (pnpm)"
-	@cd $(OPENCLAW_DIR) && pnpm install --frozen-lockfile 2>/dev/null || cd $(OPENCLAW_DIR) && pnpm install
+	@cd $(OPENCLAW_DIR) && sudo -u $(INSTALL_USER) pnpm install --frozen-lockfile 2>/dev/null || \
+		cd $(OPENCLAW_DIR) && sudo -u $(INSTALL_USER) pnpm install
 	@echo "==> Building OpenClaw"
-	@cd $(OPENCLAW_DIR) && pnpm build
+	@cd $(OPENCLAW_DIR) && sudo -u $(INSTALL_USER) pnpm build
 
 .PHONY: _openclaw-path
 _openclaw-path:
@@ -416,6 +418,7 @@ _openclaw-config:
 	@echo "==> Generating OpenClaw config"
 	@mkdir -p $(INSTALL_USER_HOME)/.openclaw
 	@echo "$$GENERATE_OPENCLAW_CONFIG" | python3
+	@chown -R $(INSTALL_USER):$(INSTALL_USER) $(INSTALL_USER_HOME)/.openclaw
 
 .PHONY: _openclaw-service
 _openclaw-service:
