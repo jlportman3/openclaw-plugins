@@ -28,6 +28,83 @@ INSTALL_CODEX  ?= $(shell command -v codex  >/dev/null 2>&1 && echo true || echo
 INSTALL_GEMINI ?= $(shell command -v gemini >/dev/null 2>&1 && echo true || echo false)
 
 # ============================================================
+# Python scripts (define/export preserves newlines)
+# ============================================================
+
+define GENERATE_GATEWAY_CONFIG
+import json
+config = {"port": $(GATEWAY_PORT), "backends": {}}
+if "$(INSTALL_CLAUDE)" == "true":
+    config["backends"]["claude-code"] = {"enabled": True, "command": "claude", "defaultModel": "sonnet", "tools": False, "sessionContinuity": True}
+if "$(INSTALL_CODEX)" == "true":
+    config["backends"]["codex"] = {"enabled": True, "command": "codex", "defaultModel": "o4-mini", "tools": False, "sessionContinuity": True}
+if "$(INSTALL_GEMINI)" == "true":
+    config["backends"]["gemini"] = {"enabled": True, "command": "gemini", "defaultModel": "auto", "tools": False, "sessionContinuity": True}
+with open("$(INSTALL_DIR)/config.json", "w") as f:
+    json.dump(config, f, indent=2)
+    f.write("\n")
+names = list(config["backends"].keys())
+print("  Backends: " + (", ".join(names) if names else "none"))
+endef
+export GENERATE_GATEWAY_CONFIG
+
+define GENERATE_OPENCLAW_CONFIG
+import json
+base = "http://localhost:$(GATEWAY_PORT)/v1"
+cost = {"input":0,"output":0,"cacheRead":0,"cacheWrite":0}
+config = {"models": {"mode": "merge", "providers": {}}, "agents": {"defaults": {"model": {}, "models": {}}}}
+providers = config["models"]["providers"]
+aliases = config["agents"]["defaults"]["models"]
+first = None
+fallbacks = []
+if "$(INSTALL_CLAUDE)" == "true":
+    providers["claude-code"] = {"baseUrl": base, "api": "openai-completions", "apiKey": "not-needed", "models": [
+        {"id":"claude-code/sonnet","name":"Claude Sonnet (via CLI)","reasoning":True,"input":["text"],"cost":cost,"contextWindow":200000,"maxTokens":16384},
+        {"id":"claude-code/opus","name":"Claude Opus (via CLI)","reasoning":True,"input":["text"],"cost":cost,"contextWindow":200000,"maxTokens":16384},
+        {"id":"claude-code/haiku","name":"Claude Haiku (via CLI)","reasoning":False,"input":["text"],"cost":cost,"contextWindow":200000,"maxTokens":16384}
+    ]}
+    aliases["claude-code/claude-code/sonnet"] = {"alias":"sonnet"}
+    aliases["claude-code/claude-code/opus"] = {"alias":"opus"}
+    aliases["claude-code/claude-code/haiku"] = {"alias":"haiku"}
+    first = first or "claude-code/claude-code/sonnet"
+    fallbacks.append("claude-code/claude-code/opus")
+if "$(INSTALL_CODEX)" == "true":
+    providers["codex"] = {"baseUrl": base, "api": "openai-completions", "apiKey": "not-needed", "models": [
+        {"id":"codex/gpt-5.3-codex","name":"GPT-5.3 Codex (via CLI)","reasoning":True,"input":["text"],"cost":cost,"contextWindow":200000,"maxTokens":16384},
+        {"id":"codex/o4-mini","name":"O4 Mini (via CLI)","reasoning":True,"input":["text"],"cost":cost,"contextWindow":200000,"maxTokens":16384}
+    ]}
+    aliases["codex/codex/gpt-5.3-codex"] = {"alias":"codex"}
+    aliases["codex/codex/o4-mini"] = {"alias":"o4-mini"}
+    if not first:
+        first = "codex/codex/gpt-5.3-codex"
+    else:
+        fallbacks.append("codex/codex/gpt-5.3-codex")
+if "$(INSTALL_GEMINI)" == "true":
+    providers["gemini"] = {"baseUrl": base, "api": "openai-completions", "apiKey": "not-needed", "models": [
+        {"id":"gemini/auto","name":"Gemini Auto (via CLI)","reasoning":True,"input":["text"],"cost":cost,"contextWindow":1000000,"maxTokens":16384},
+        {"id":"gemini/gemini-2.5-pro","name":"Gemini 2.5 Pro (via CLI)","reasoning":True,"input":["text"],"cost":cost,"contextWindow":1000000,"maxTokens":16384},
+        {"id":"gemini/gemini-2.5-flash","name":"Gemini 2.5 Flash (via CLI)","reasoning":True,"input":["text"],"cost":cost,"contextWindow":1000000,"maxTokens":16384}
+    ]}
+    aliases["gemini/gemini/auto"] = {"alias":"gemini"}
+    aliases["gemini/gemini/gemini-2.5-pro"] = {"alias":"gemini-pro"}
+    aliases["gemini/gemini/gemini-2.5-flash"] = {"alias":"gemini-flash"}
+    if not first:
+        first = "gemini/gemini/auto"
+    else:
+        fallbacks.append("gemini/gemini/auto")
+config["agents"]["defaults"]["model"]["primary"] = first or ""
+config["agents"]["defaults"]["model"]["fallbacks"] = fallbacks[:3]
+path = "$(INSTALL_USER_HOME)/.openclaw/openclaw.json"
+with open(path, "w") as f:
+    json.dump(config, f, indent=2)
+    f.write("\n")
+print("  Config: " + path)
+print("  Primary: " + (first or "none"))
+print("  Providers: " + ", ".join(providers.keys()))
+endef
+export GENERATE_OPENCLAW_CONFIG
+
+# ============================================================
 # install — Full production deployment (requires sudo)
 # ============================================================
 .PHONY: install
@@ -69,28 +146,13 @@ _copy-files:
 .PHONY: _npm-install
 _npm-install:
 	@echo "==> Installing dependencies (node-pty native build)"
-	@cd $(INSTALL_DIR) && sudo -u $(INSTALL_USER) npm install --production 2>&1 | tail -5
+	@cd $(INSTALL_DIR) && sudo -u $(INSTALL_USER) npm install --omit=dev 2>&1 | tail -5
 	@echo "  ✓ node-pty compiled"
 
 .PHONY: _generate-config
 _generate-config:
 	@echo "==> Generating config.json"
-	@python3 -c "\
-import json; \
-config = {'port': $(GATEWAY_PORT), 'backends': {}}; \
-if '$(INSTALL_CLAUDE)' == 'true': \
-    config['backends']['claude-code'] = {'enabled': True, 'command': 'claude', 'defaultModel': 'sonnet', 'tools': False, 'sessionContinuity': True}; \
-if '$(INSTALL_CODEX)' == 'true': \
-    config['backends']['codex'] = {'enabled': True, 'command': 'codex', 'defaultModel': 'o4-mini', 'tools': False, 'sessionContinuity': True}; \
-if '$(INSTALL_GEMINI)' == 'true': \
-    config['backends']['gemini'] = {'enabled': True, 'command': 'gemini', 'defaultModel': 'auto', 'tools': False, 'sessionContinuity': True}; \
-f = open('$(INSTALL_DIR)/config.json', 'w'); \
-json.dump(config, f, indent=2); \
-f.write('\n'); \
-f.close(); \
-names = list(config['backends'].keys()); \
-print('  Backends: ' + (', '.join(names) if names else 'none')); \
-"
+	@echo "$$GENERATE_GATEWAY_CONFIG" | python3
 	@chown $(INSTALL_USER):$(INSTALL_USER) $(INSTALL_DIR)/config.json
 
 .PHONY: _install-env
@@ -286,57 +348,7 @@ _openclaw-build:
 _openclaw-config:
 	@echo "==> Generating OpenClaw config"
 	@mkdir -p $(INSTALL_USER_HOME)/.openclaw
-	@python3 -c "\
-import json, os; \
-base = 'http://localhost:$(GATEWAY_PORT)/v1'; \
-cost = {'input':0,'output':0,'cacheRead':0,'cacheWrite':0}; \
-config = {'models': {'mode': 'merge', 'providers': {}}, 'agents': {'defaults': {'model': {}, 'models': {}}}}; \
-providers = config['models']['providers']; \
-aliases = config['agents']['defaults']['models']; \
-first = None; \
-fallbacks = []; \
-if '$(INSTALL_CLAUDE)' == 'true': \
-    providers['claude-code'] = {'baseUrl': base, 'api': 'openai-completions', 'apiKey': 'not-needed', 'models': [ \
-        {'id':'claude-code/sonnet','name':'Claude Sonnet (via CLI)','reasoning':True,'input':['text'],'cost':cost,'contextWindow':200000,'maxTokens':16384}, \
-        {'id':'claude-code/opus','name':'Claude Opus (via CLI)','reasoning':True,'input':['text'],'cost':cost,'contextWindow':200000,'maxTokens':16384}, \
-        {'id':'claude-code/haiku','name':'Claude Haiku (via CLI)','reasoning':False,'input':['text'],'cost':cost,'contextWindow':200000,'maxTokens':16384} \
-    ]}; \
-    aliases['claude-code/claude-code/sonnet'] = {'alias':'sonnet'}; \
-    aliases['claude-code/claude-code/opus'] = {'alias':'opus'}; \
-    aliases['claude-code/claude-code/haiku'] = {'alias':'haiku'}; \
-    first = first or 'claude-code/claude-code/sonnet'; \
-    fallbacks.append('claude-code/claude-code/opus'); \
-if '$(INSTALL_CODEX)' == 'true': \
-    providers['codex'] = {'baseUrl': base, 'api': 'openai-completions', 'apiKey': 'not-needed', 'models': [ \
-        {'id':'codex/gpt-5.3-codex','name':'GPT-5.3 Codex (via CLI)','reasoning':True,'input':['text'],'cost':cost,'contextWindow':200000,'maxTokens':16384}, \
-        {'id':'codex/o4-mini','name':'O4 Mini (via CLI)','reasoning':True,'input':['text'],'cost':cost,'contextWindow':200000,'maxTokens':16384} \
-    ]}; \
-    aliases['codex/codex/gpt-5.3-codex'] = {'alias':'codex'}; \
-    aliases['codex/codex/o4-mini'] = {'alias':'o4-mini'}; \
-    if not first: first = 'codex/codex/gpt-5.3-codex'; \
-    else: fallbacks.append('codex/codex/gpt-5.3-codex'); \
-if '$(INSTALL_GEMINI)' == 'true': \
-    providers['gemini'] = {'baseUrl': base, 'api': 'openai-completions', 'apiKey': 'not-needed', 'models': [ \
-        {'id':'gemini/auto','name':'Gemini Auto (via CLI)','reasoning':True,'input':['text'],'cost':cost,'contextWindow':1000000,'maxTokens':16384}, \
-        {'id':'gemini/gemini-2.5-pro','name':'Gemini 2.5 Pro (via CLI)','reasoning':True,'input':['text'],'cost':cost,'contextWindow':1000000,'maxTokens':16384}, \
-        {'id':'gemini/gemini-2.5-flash','name':'Gemini 2.5 Flash (via CLI)','reasoning':True,'input':['text'],'cost':cost,'contextWindow':1000000,'maxTokens':16384} \
-    ]}; \
-    aliases['gemini/gemini/auto'] = {'alias':'gemini'}; \
-    aliases['gemini/gemini/gemini-2.5-pro'] = {'alias':'gemini-pro'}; \
-    aliases['gemini/gemini/gemini-2.5-flash'] = {'alias':'gemini-flash'}; \
-    if not first: first = 'gemini/gemini/auto'; \
-    else: fallbacks.append('gemini/gemini/auto'); \
-config['agents']['defaults']['model']['primary'] = first or ''; \
-config['agents']['defaults']['model']['fallbacks'] = fallbacks[:3]; \
-path = '$(INSTALL_USER_HOME)/.openclaw/openclaw.json'; \
-f = open(path, 'w'); \
-json.dump(config, f, indent=2); \
-f.write('\n'); \
-f.close(); \
-print('  Config: ' + path); \
-print('  Primary: ' + (first or 'none')); \
-print('  Providers: ' + ', '.join(providers.keys())); \
-"
+	@echo "$$GENERATE_OPENCLAW_CONFIG" | python3
 
 .PHONY: openclaw-start
 openclaw-start:

@@ -64,4 +64,11 @@ fi
 # --- Hand off to setup.sh as the user ---
 echo "  Launching setup.sh as $TARGET_USER..."
 echo ""
-exec su - "$TARGET_USER" -c "$DEST/setup.sh" </dev/tty >/dev/tty 2>&1
+su - "$TARGET_USER" -c "$DEST/setup.sh" </dev/tty >/dev/tty 2>&1
+EXIT_CODE=$?
+if [ $EXIT_CODE -ne 0 ]; then
+    echo "" >/dev/tty
+    echo "  setup.sh exited with code $EXIT_CODE" >/dev/tty
+    echo "  To retry manually: $DEST/setup.sh" >/dev/tty
+fi
+exit $EXIT_CODE
