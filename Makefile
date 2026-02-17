@@ -57,12 +57,25 @@ endef
 export GENERATE_GATEWAY_CONFIG
 
 define GENERATE_OPENCLAW_CONFIG
-import json
+import json, secrets, os
+from datetime import datetime, timezone
+
+path = "$(INSTALL_USER_HOME)/.openclaw/openclaw.json"
 base = "http://localhost:$(GATEWAY_PORT)/v1"
 cost = {"input":0,"output":0,"cacheRead":0,"cacheWrite":0}
-config = {"gateway": {"port": $(OPENCLAW_PORT), "mode": "local", "bind": "lan"}, "models": {"mode": "merge", "providers": {}}, "agents": {"defaults": {"model": {}, "models": {}}}}
-providers = config["models"]["providers"]
-aliases = config["agents"]["defaults"]["models"]
+
+# Load existing config to preserve gateway auth token, wizard state, etc.
+existing = {}
+if os.path.isfile(path):
+    try:
+        with open(path) as f:
+            existing = json.load(f)
+    except Exception:
+        pass
+
+# Build provider/model config
+providers = {}
+aliases = {}
 first = None
 fallbacks = []
 if "$(INSTALL_CLAUDE)" == "true":
@@ -100,15 +113,35 @@ if "$(INSTALL_GEMINI)" == "true":
         first = "gemini/gemini/auto"
     else:
         fallbacks.append("gemini/gemini/auto")
-config["agents"]["defaults"]["model"]["primary"] = first or ""
-config["agents"]["defaults"]["model"]["fallbacks"] = fallbacks[:3]
-path = "$(INSTALL_USER_HOME)/.openclaw/openclaw.json"
+
+# Preserve existing gateway auth token, or generate new one
+gw_existing = existing.get("gateway", {})
+auth_token = gw_existing.get("auth", {}).get("token") or secrets.token_hex(24)
+now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+# Build complete config — preserve existing sections we don't manage
+config = {}
+# Preserve wizard state from openclaw doctor
+if "wizard" in existing:
+    config["wizard"] = existing["wizard"]
+# Our model providers
+config["models"] = {"mode": "merge", "providers": providers}
+# Our agent defaults
+config["agents"] = {"defaults": {"model": {"primary": first or "", "fallbacks": fallbacks[:3]}, "models": aliases}}
+# Preserve commands section
+config["commands"] = existing.get("commands", {"native": "auto", "nativeSkills": "auto"})
+# Gateway config with proper auth
+config["gateway"] = {"port": $(OPENCLAW_PORT), "mode": "local", "bind": "lan", "auth": {"mode": "token", "token": auth_token}}
+# Metadata
+config["meta"] = {"lastTouchedVersion": existing.get("meta", {}).get("lastTouchedVersion", "cli-gateway"), "lastTouchedAt": now}
+
 with open(path, "w") as f:
     json.dump(config, f, indent=2)
     f.write("\n")
 print("  Config: " + path)
 print("  Primary: " + (first or "none"))
 print("  Providers: " + ", ".join(providers.keys()))
+print("  Gateway: port " + str($(OPENCLAW_PORT)) + ", auth=token")
 endef
 export GENERATE_OPENCLAW_CONFIG
 
