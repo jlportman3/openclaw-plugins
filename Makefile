@@ -43,11 +43,11 @@ define GENERATE_GATEWAY_CONFIG
 import json
 config = {"port": $(GATEWAY_PORT), "backends": {}}
 if "$(INSTALL_CLAUDE)" == "true":
-    config["backends"]["claude-code"] = {"enabled": True, "command": "claude", "defaultModel": "sonnet", "tools": True, "sessionContinuity": True}
+    config["backends"]["claude-code"] = {"enabled": True, "command": "claude", "defaultModel": "opus", "tools": True, "sessionContinuity": True}
 if "$(INSTALL_CODEX)" == "true":
-    config["backends"]["codex"] = {"enabled": True, "command": "codex", "defaultModel": "o4-mini", "tools": True, "sessionContinuity": True}
+    config["backends"]["codex"] = {"enabled": True, "command": "codex", "defaultModel": "gpt-5.3-codex", "tools": True, "sessionContinuity": True}
 if "$(INSTALL_GEMINI)" == "true":
-    config["backends"]["gemini"] = {"enabled": True, "command": "gemini", "defaultModel": "auto", "tools": True, "sessionContinuity": True}
+    config["backends"]["gemini"] = {"enabled": True, "command": "gemini", "defaultModel": "gemini-2.5-pro", "tools": True, "sessionContinuity": True}
 with open("$(INSTALL_DIR)/config.json", "w") as f:
     json.dump(config, f, indent=2)
     f.write("\n")
@@ -87,8 +87,8 @@ if "$(INSTALL_CLAUDE)" == "true":
     aliases["claude-code/claude-code/sonnet"] = {"alias":"sonnet"}
     aliases["claude-code/claude-code/opus"] = {"alias":"opus"}
     aliases["claude-code/claude-code/haiku"] = {"alias":"haiku"}
-    first = first or "claude-code/claude-code/sonnet"
-    fallbacks.append("claude-code/claude-code/opus")
+    first = first or "claude-code/claude-code/opus"
+    fallbacks.append("claude-code/claude-code/sonnet")
 if "$(INSTALL_CODEX)" == "true":
     providers["codex"] = {"baseUrl": base, "api": "openai-completions", "apiKey": "not-needed", "models": [
         {"id":"codex/gpt-5.3-codex","name":"GPT-5.3 Codex (via CLI)","reasoning":True,"input":["text"],"cost":cost,"contextWindow":200000,"maxTokens":16384},
@@ -110,9 +110,9 @@ if "$(INSTALL_GEMINI)" == "true":
     aliases["gemini/gemini/gemini-2.5-pro"] = {"alias":"gemini-pro"}
     aliases["gemini/gemini/gemini-2.5-flash"] = {"alias":"gemini-flash"}
     if not first:
-        first = "gemini/gemini/auto"
+        first = "gemini/gemini/gemini-2.5-pro"
     else:
-        fallbacks.append("gemini/gemini/auto")
+        fallbacks.append("gemini/gemini/gemini-2.5-pro")
 
 # Preserve existing gateway auth token, or generate new one
 gw_existing = existing.get("gateway", {})
@@ -339,7 +339,7 @@ test:
 	@echo "  To test a chat completion:"
 	@echo "    curl -X POST http://localhost:$(GATEWAY_PORT)/v1/chat/completions \\"
 	@echo "      -H 'Content-Type: application/json' \\"
-	@echo "      -d '{\"model\":\"claude-code/sonnet\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}]}'"
+	@echo "      -d '{\"model\":\"claude-code/opus\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}]}'"
 
 # ============================================================
 # Uninstall

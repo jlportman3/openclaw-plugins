@@ -4,21 +4,21 @@
     "claude-code": {
       "enabled": true,
       "command": "claude",
-      "defaultModel": "sonnet",
+      "defaultModel": "opus",
       "tools": true,
       "sessionContinuity": true
     },
     "codex": {
       "enabled": true,
       "command": "codex",
-      "defaultModel": "o4-mini",
+      "defaultModel": "gpt-5.3-codex",
       "tools": true,
       "sessionContinuity": true
     },
     "gemini": {
       "enabled": true,
       "command": "gemini",
-      "defaultModel": "auto",
+      "defaultModel": "gemini-2.5-pro",
       "tools": true,
       "sessionContinuity": true
     }
