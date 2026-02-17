@@ -1,14 +1,16 @@
-import type { ChildProcess } from "node:child_process";
-
 // --- Backend contract ---
+
+export interface CliHandle {
+  output: AsyncIterable<ChatChunk>;
+  kill(): void;
+}
 
 export interface CliBackend {
   id: string;
   displayName: string;
   detect(): Promise<boolean>;
   listModels(): ModelInfo[];
-  spawn(request: SpawnRequest): ChildProcess;
-  parseOutput(stdout: NodeJS.ReadableStream): AsyncIterable<ChatChunk>;
+  run(request: SpawnRequest): CliHandle;
 }
 
 export interface SpawnRequest {

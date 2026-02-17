@@ -150,8 +150,8 @@ async function handleChatCompletions(
   const ac = new AbortController();
   req.on("close", () => ac.abort());
 
-  // Spawn CLI process
-  const child = backend.spawn({
+  // Run CLI process via backend
+  const handle = backend.run({
     model: modelName || config.backends[backendId]?.defaultModel || "",
     messages: body.messages,
     systemPrompt,
@@ -162,16 +162,6 @@ async function handleChatCompletions(
     tools: config.backends[backendId]?.tools ?? false,
     signal: ac.signal,
   });
-
-  // Collect stderr for error reporting
-  let stderr = "";
-  child.stderr?.on("data", (chunk: Buffer) => {
-    stderr += chunk.toString();
-  });
-
-  if (!child.stdout) {
-    return errorResponse(res, 500, "Failed to spawn CLI process");
-  }
 
   const chunkId = createChunkId();
   const modelStr = body.model;
@@ -189,7 +179,7 @@ async function handleChatCompletions(
     res.write(formatSSERoleChunk(chunkId, modelStr));
 
     try {
-      for await (const chunk of backend.parseOutput(child.stdout)) {
+      for await (const chunk of handle.output) {
         if (chunk.type === "content" && chunk.content) {
           res.write(formatSSEChunk(chunkId, modelStr, chunk.content));
         } else if (chunk.type === "done") {
@@ -218,7 +208,7 @@ async function handleChatCompletions(
     let finalUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
 
     try {
-      for await (const chunk of backend.parseOutput(child.stdout)) {
+      for await (const chunk of handle.output) {
         if (chunk.type === "content" && chunk.content) {
           fullContent += chunk.content;
         } else if (chunk.type === "done") {
