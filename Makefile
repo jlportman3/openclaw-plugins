@@ -400,6 +400,22 @@ openclaw-status:
 openclaw-logs:
 	journalctl --user -u openclaw-gateway -f
 
+# --- Standalone config for existing OpenClaw installs ---
+.PHONY: configure
+configure:
+	@echo "==> Configuring OpenClaw to use cli-gateway (localhost:$(GATEWAY_PORT))"
+	@echo ""
+	@echo "  Auto-detecting installed CLI backends..."
+	@command -v claude >/dev/null 2>&1 && echo "    ✓ Claude Code" || echo "    ✗ Claude Code (not found)"
+	@command -v codex  >/dev/null 2>&1 && echo "    ✓ Codex CLI"   || echo "    ✗ Codex CLI (not found)"
+	@command -v gemini >/dev/null 2>&1 && echo "    ✓ Gemini CLI"  || echo "    ✗ Gemini CLI (not found)"
+	@echo ""
+	@mkdir -p $(INSTALL_USER_HOME)/.openclaw
+	@echo "$$GENERATE_OPENCLAW_CONFIG" | python3
+	@echo ""
+	@echo "  ✓ Config written. Make sure cli-gateway is running on port $(GATEWAY_PORT)."
+	@echo ""
+
 # ============================================================
 # Cleanup
 # ============================================================
@@ -436,6 +452,7 @@ help:
 	@echo "    openclaw-stop    Stop OpenClaw gateway service"
 	@echo "    openclaw-status  OpenClaw gateway service status"
 	@echo "    openclaw-logs    Follow OpenClaw gateway logs"
+	@echo "    configure        Write ~/.openclaw/openclaw.json (existing installs)"
 	@echo ""
 	@echo "  Other:"
 	@echo "    clean            Remove local build artifacts"
