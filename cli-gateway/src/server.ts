@@ -130,8 +130,15 @@ async function handleChatCompletions(
   const systemMessages = body.messages.filter(
     (m: OpenAIMessage) => m.role === "system",
   );
+  const extractText = (content: string | Array<Record<string, unknown>>): string =>
+    typeof content === "string"
+      ? content
+      : content
+          .filter((p) => p.type === "text")
+          .map((p) => p.text as string)
+          .join("\n");
   const systemPrompt = systemMessages.length
-    ? systemMessages.map((m: OpenAIMessage) => m.content).join("\n")
+    ? systemMessages.map((m: OpenAIMessage) => extractText(m.content)).join("\n")
     : undefined;
 
   // Session management

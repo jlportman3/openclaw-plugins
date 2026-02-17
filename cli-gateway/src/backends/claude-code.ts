@@ -76,18 +76,34 @@ export function createClaudeCodeBackend(config: BackendConfig): CliBackend {
       const lastUserMsg = [...req.messages]
         .reverse()
         .find((m) => m.role === "user");
-      const prompt = lastUserMsg?.content ?? "";
+      // Content may be a string or an array of content parts
+      const rawContent = lastUserMsg?.content;
+      const prompt =
+        typeof rawContent === "string"
+          ? rawContent
+          : Array.isArray(rawContent)
+            ? rawContent
+                .filter((p: unknown) => (p as Record<string, unknown>)?.type === "text")
+                .map((p: unknown) => (p as Record<string, string>).text)
+                .join("\n")
+            : "";
 
       // Use -- to separate options from the prompt positional argument
       // This prevents variadic flags (--tools, --allowedTools) from consuming the prompt
       args.push("--", prompt);
+
+      // Filter out undefined env values (node-pty requires all strings)
+      const cleanEnv: Record<string, string> = {};
+      for (const [k, v] of Object.entries(process.env)) {
+        if (v !== undefined) cleanEnv[k] = v;
+      }
 
       const ptyProcess = pty.spawn(command, args, {
         name: "xterm-256color",
         cols: 200,
         rows: 50,
         cwd: process.cwd(),
-        env: process.env as Record<string, string>,
+        env: cleanEnv,
       });
 
       // Buffer for incomplete lines from PTY

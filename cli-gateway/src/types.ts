@@ -52,7 +52,7 @@ export interface UsageInfo {
 
 export interface OpenAIMessage {
   role: "system" | "user" | "assistant" | "tool";
-  content: string;
+  content: string | Array<Record<string, unknown>>;
   name?: string;
 }
 

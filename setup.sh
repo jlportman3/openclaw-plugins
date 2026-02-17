@@ -1,22 +1,37 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "=== cli-gateway + OpenClaw Setup ==="
+GATEWAY_PORT=4090
+OPENCLAW_STATE_DIR="${OPENCLAW_STATE_DIR:-$HOME/.openclaw}"
+OPENCLAW_REPO="https://github.com/nicobailon/openclaw.git"
+
+echo "============================================="
+echo "  OpenClaw + cli-gateway Bootstrap"
+echo "============================================="
 echo ""
 
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
 NC='\033[0m'
 
-ok()   { echo -e "${GREEN}[OK]${NC} $1"; }
-warn() { echo -e "${YELLOW}[!!]${NC} $1"; }
-fail() { echo -e "${RED}[FAIL]${NC} $1"; exit 1; }
+ok()   { echo -e "  ${GREEN}[OK]${NC} $1"; }
+warn() { echo -e "  ${YELLOW}[!!]${NC} $1"; }
+fail() { echo -e "  ${RED}[FAIL]${NC} $1"; exit 1; }
+step() { echo -e "\n${CYAN}--- $1 ---${NC}"; }
 
-# 1. Check Node.js
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# ============================================================
+# Phase 1: Prerequisites
+# ============================================================
+step "Phase 1: Checking prerequisites"
+
+# Node.js 22+
 if ! command -v node &>/dev/null; then
-  fail "Node.js not found. Install Node.js 22+ first."
+  fail "Node.js not found. Install Node.js 22+ first: https://nodejs.org"
 fi
 NODE_MAJOR=$(node -v | cut -d. -f1 | tr -d v)
 if [ "$NODE_MAJOR" -lt 22 ]; then
@@ -24,72 +39,186 @@ if [ "$NODE_MAJOR" -lt 22 ]; then
 fi
 ok "Node.js $(node -v)"
 
-# 2. Check Claude Code
-if ! command -v claude &>/dev/null; then
-  fail "Claude Code not found. Install: npm install -g @anthropic-ai/claude-code"
-fi
-ok "Claude Code $(claude --version 2>/dev/null | head -1)"
-
-# 3. Verify Claude Code authentication
-echo -n "Verifying Claude Code auth... "
-if claude -p --output-format json "ping" >/dev/null 2>&1; then
-  ok "Authenticated"
-else
-  fail "Claude Code not authenticated. Run 'claude' interactively to log in."
-fi
-
-# 4. Check pnpm (for OpenClaw)
+# pnpm (for OpenClaw build)
 if ! command -v pnpm &>/dev/null; then
   warn "pnpm not found. Installing..."
   npm install -g pnpm
-  ok "pnpm installed"
+fi
+ok "pnpm $(pnpm --version)"
+
+# Claude Code
+if ! command -v claude &>/dev/null; then
+  warn "Claude Code not found. Installing..."
+  npm install -g @anthropic-ai/claude-code
+fi
+ok "Claude Code $(claude --version 2>/dev/null | head -1)"
+
+# Claude Code authentication
+echo -n "  Verifying Claude Code auth... "
+if claude -p --output-format json "ping" >/dev/null 2>&1; then
+  echo -e "${GREEN}OK${NC}"
 else
-  ok "pnpm $(pnpm --version)"
+  echo ""
+  fail "Claude Code not authenticated. Run 'claude' interactively first to log in."
 fi
 
-# 5. Install dependencies
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# ============================================================
+# Phase 2: cli-gateway
+# ============================================================
+step "Phase 2: Setting up cli-gateway"
+
 cd "$SCRIPT_DIR/cli-gateway"
 
 if [ ! -d "node_modules" ]; then
-  echo "Installing dependencies..."
-  npm install
-  ok "Dependencies installed"
-else
-  ok "Dependencies already installed"
+  echo "  Installing dependencies (node-pty)..."
+  npm install --loglevel=warn 2>&1 | tail -3
+fi
+ok "Dependencies installed"
+
+# Kill any existing gateway on this port
+if lsof -ti ":${GATEWAY_PORT}" >/dev/null 2>&1; then
+  warn "Killing existing process on port ${GATEWAY_PORT}"
+  lsof -ti ":${GATEWAY_PORT}" | xargs kill -9 2>/dev/null || true
+  sleep 1
 fi
 
-# 6. Start cli-gateway
-echo ""
-echo "Starting cli-gateway..."
-node --experimental-strip-types src/server.ts &
+echo "  Starting cli-gateway..."
+node --experimental-strip-types src/server.ts > /tmp/cli-gateway.log 2>&1 &
 GATEWAY_PID=$!
 sleep 3
 
-if kill -0 $GATEWAY_PID 2>/dev/null; then
-  ok "cli-gateway running on http://localhost:4090 (PID: $GATEWAY_PID)"
-else
+if ! kill -0 "$GATEWAY_PID" 2>/dev/null; then
+  echo "  Gateway log:"
+  cat /tmp/cli-gateway.log 2>/dev/null || true
   fail "cli-gateway failed to start"
 fi
 
+if ! curl -sf "http://localhost:${GATEWAY_PORT}/health" >/dev/null 2>&1; then
+  fail "Gateway health check failed"
+fi
+ok "cli-gateway running on http://localhost:${GATEWAY_PORT} (PID: $GATEWAY_PID)"
+
+# ============================================================
+# Phase 3: OpenClaw
+# ============================================================
+step "Phase 3: Setting up OpenClaw"
+
+OPENCLAW_DIR="$SCRIPT_DIR/openclaw"
+
+if [ -d "$OPENCLAW_DIR" ] && [ -f "$OPENCLAW_DIR/package.json" ]; then
+  ok "OpenClaw already cloned"
+else
+  echo "  Cloning OpenClaw..."
+  git clone "$OPENCLAW_REPO" "$OPENCLAW_DIR"
+  ok "OpenClaw cloned"
+fi
+
+cd "$OPENCLAW_DIR"
+
+if [ ! -d "node_modules" ]; then
+  echo "  Installing OpenClaw dependencies (this may take a few minutes)..."
+  pnpm install --frozen-lockfile 2>/dev/null || pnpm install
+fi
+ok "OpenClaw dependencies installed"
+
+if [ ! -d "dist" ]; then
+  echo "  Building OpenClaw (first time only)..."
+  pnpm build
+fi
+ok "OpenClaw built"
+
+# ============================================================
+# Phase 4: Configuration
+# ============================================================
+step "Phase 4: Configuring OpenClaw"
+
+mkdir -p "$OPENCLAW_STATE_DIR"
+CONFIG_FILE="$OPENCLAW_STATE_DIR/openclaw.json"
+
+if [ -f "$CONFIG_FILE" ]; then
+  warn "Config exists at $CONFIG_FILE — backing up to openclaw.json.bak"
+  cp "$CONFIG_FILE" "${CONFIG_FILE}.bak"
+fi
+
+cat > "$CONFIG_FILE" << CONFIGEOF
+{
+  "models": {
+    "mode": "merge",
+    "providers": {
+      "claude-code": {
+        "baseUrl": "http://localhost:${GATEWAY_PORT}/v1",
+        "api": "openai-completions",
+        "apiKey": "not-needed",
+        "models": [
+          {
+            "id": "claude-code/sonnet",
+            "name": "Claude Sonnet (via Claude Code CLI)",
+            "reasoning": true,
+            "input": ["text"],
+            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+            "contextWindow": 200000,
+            "maxTokens": 16384
+          },
+          {
+            "id": "claude-code/opus",
+            "name": "Claude Opus (via Claude Code CLI)",
+            "reasoning": true,
+            "input": ["text"],
+            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+            "contextWindow": 200000,
+            "maxTokens": 16384
+          },
+          {
+            "id": "claude-code/haiku",
+            "name": "Claude Haiku (via Claude Code CLI)",
+            "reasoning": false,
+            "input": ["text"],
+            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+            "contextWindow": 200000,
+            "maxTokens": 16384
+          }
+        ]
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "claude-code/claude-code/sonnet",
+        "fallbacks": ["claude-code/claude-code/opus"]
+      },
+      "models": {
+        "claude-code/claude-code/sonnet": { "alias": "sonnet" },
+        "claude-code/claude-code/opus": { "alias": "opus" },
+        "claude-code/claude-code/haiku": { "alias": "haiku" }
+      }
+    }
+  }
+}
+CONFIGEOF
+
+ok "Config written to $CONFIG_FILE"
+
+# ============================================================
+# Summary
+# ============================================================
+step "Setup Complete!"
 echo ""
-echo "=== Setup Complete ==="
+echo "  cli-gateway:  http://localhost:${GATEWAY_PORT}  (PID: $GATEWAY_PID)"
+echo "  OpenClaw dir: $OPENCLAW_DIR"
+echo "  Config:       $CONFIG_FILE"
 echo ""
-echo "cli-gateway is running at http://localhost:4090"
+echo "  Start OpenClaw:"
+echo "    cd $OPENCLAW_DIR && pnpm start"
 echo ""
-echo "To use with OpenClaw, add this to your OpenClaw config:"
+echo "  Or start the gateway daemon separately:"
+echo "    cd $SCRIPT_DIR/cli-gateway && node --experimental-strip-types src/server.ts"
 echo ""
-echo '  models:'
-echo '    providers:'
-echo '      claude-code:'
-echo '        baseUrl: "http://localhost:4090/v1"'
-echo '        api: "openai-responses"'
-echo '        models:'
-echo '          - id: "claude-code/sonnet"'
-echo '            name: "Claude Sonnet (via CLI)"'
-echo '            reasoning: true'
-echo '            input: ["text"]'
-echo '            contextWindow: 200000'
-echo '            maxTokens: 16384'
+echo "  Stop gateway:"
+echo "    kill $GATEWAY_PID"
 echo ""
-echo "To stop: kill $GATEWAY_PID"
+echo "  Switch models in OpenClaw:"
+echo "    /model sonnet"
+echo "    /model opus"
+echo "    /model haiku"
+echo ""
