@@ -168,7 +168,7 @@ async function handleChatCompletions(
     maxTokens: body.max_tokens,
     sessionId,
     isNewConversation: isNew,
-    tools: config.backends[backendId]?.tools ?? false,
+    tools: config.backends[backendId]?.tools ?? true,
     signal: ac.signal,
   });
 

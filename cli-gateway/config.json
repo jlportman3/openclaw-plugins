@@ -5,7 +5,7 @@
       "enabled": true,
       "command": "claude",
       "defaultModel": "sonnet",
-      "tools": false,
+      "tools": true,
       "sessionContinuity": true
     },
     "codex": {

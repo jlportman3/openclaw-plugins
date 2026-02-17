@@ -43,7 +43,7 @@ define GENERATE_GATEWAY_CONFIG
 import json
 config = {"port": $(GATEWAY_PORT), "backends": {}}
 if "$(INSTALL_CLAUDE)" == "true":
-    config["backends"]["claude-code"] = {"enabled": True, "command": "claude", "defaultModel": "sonnet", "tools": False, "sessionContinuity": True}
+    config["backends"]["claude-code"] = {"enabled": True, "command": "claude", "defaultModel": "sonnet", "tools": True, "sessionContinuity": True}
 if "$(INSTALL_CODEX)" == "true":
     config["backends"]["codex"] = {"enabled": True, "command": "codex", "defaultModel": "o4-mini", "tools": False, "sessionContinuity": True}
 if "$(INSTALL_GEMINI)" == "true":
