@@ -115,7 +115,7 @@ async function handleChatCompletions(
     return errorResponse(res, 400, "Missing required field: messages");
   }
 
-  console.log(`[REQ] model=${body.model} stream=${body.stream} messages=${body.messages.length}`);
+  console.log(`[REQ] model=${body.model} stream=${body.stream} messages=${body.messages.length} roles=[${body.messages.map((m: OpenAIMessage) => m.role).join(",")}]`);
 
   const { backendId, modelName } = parseModelId(body.model);
   const backend = getBackend(backendId);
@@ -154,6 +154,8 @@ async function handleChatCompletions(
     firstUserMsg?.content,
   );
   const isNew = isNewConversation(sessionId, body.messages.length);
+
+  console.log(`[SESSION] id=${sessionId} new=${isNew} msgCount=${body.messages.length} headerSid=${headerSessionId ?? "none"} sysprompt=${systemPrompt ? systemPrompt.slice(0, 60) + "..." : "none"} firstUser=${typeof firstUserMsg?.content === "string" ? firstUserMsg.content.slice(0, 60) + "..." : "non-string"}`);
 
   // Abort controller for cancellation
   const ac = new AbortController();
