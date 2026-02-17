@@ -188,8 +188,8 @@ install_cli_tools() {
         if command -v claude &>/dev/null; then
             ok "Claude Code already installed ($(claude --version 2>/dev/null | head -1))"
         else
-            info "Installing Claude Code (@anthropic-ai/claude-code)..."
-            sudo npm install -g @anthropic-ai/claude-code
+            info "Installing Claude Code — this may take a few minutes..."
+            sudo npm install -g @anthropic-ai/claude-code --loglevel notice
             ok "Claude Code installed"
         fi
     fi
@@ -198,8 +198,8 @@ install_cli_tools() {
         if command -v codex &>/dev/null; then
             ok "Codex CLI already installed"
         else
-            info "Installing Codex CLI (@openai/codex)..."
-            sudo npm install -g @openai/codex
+            info "Installing Codex CLI..."
+            sudo npm install -g @openai/codex --loglevel notice
             ok "Codex CLI installed"
         fi
     fi
@@ -208,8 +208,8 @@ install_cli_tools() {
         if command -v gemini &>/dev/null; then
             ok "Gemini CLI already installed"
         else
-            info "Installing Gemini CLI (@anthropic-ai/gemini-cli)..."
-            sudo npm install -g @google/gemini-cli
+            info "Installing Gemini CLI..."
+            sudo npm install -g @google/gemini-cli --loglevel notice
             ok "Gemini CLI installed"
         fi
     fi
