@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { which } from "../util/which.ts";
 import { cleanEnv } from "../util/clean-env.ts";
 import type {
@@ -12,6 +12,163 @@ import type {
 
 // Map gateway sessionId -> codex thread_id for session resume
 const sessionMapping = new Map<string, string>();
+
+const MAX_RETRIES = 2; // up to 3 total attempts
+
+/**
+ * Spawn codex once and return an async iterable of ChatChunks.
+ * Captures stderr for logging. Self-contained — each call is independent.
+ */
+function spawnCodex(
+  command: string,
+  args: string[],
+  sessionId: string,
+): { output: AsyncIterable<ChatChunk>; child: ChildProcess } {
+  const child = spawn(command, args, {
+    cwd: process.cwd(),
+    env: cleanEnv("codex"),
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  let lineBuf = "";
+
+  const chunkQueue: ChatChunk[] = [];
+  let done = false;
+  let waitResolve: (() => void) | null = null;
+
+  function enqueue(chunk: ChatChunk): void {
+    chunkQueue.push(chunk);
+    if (waitResolve) {
+      const r = waitResolve;
+      waitResolve = null;
+      r();
+    }
+  }
+
+  function finish(): void {
+    done = true;
+    if (waitResolve) {
+      const r = waitResolve;
+      waitResolve = null;
+      r();
+    }
+  }
+
+  function processLine(trimmed: string): void {
+    let event: Record<string, unknown>;
+    try {
+      event = JSON.parse(trimmed);
+    } catch {
+      return;
+    }
+
+    const type = event.type as string;
+
+    if (type === "thread.started") {
+      const threadId = event.thread_id as string;
+      if (threadId) {
+        sessionMapping.set(sessionId, threadId);
+      }
+    } else if (type === "item.completed") {
+      const item = event.item as Record<string, unknown>;
+      if (
+        item?.type === "agent_message" &&
+        typeof item.text === "string"
+      ) {
+        // Strip Codex conversation markers like [[reply_to_current]]
+        const text = item.text.replace(/\[\[[\w_]+\]\]\s*/g, "").trim();
+        if (text) enqueue({ type: "content", content: text });
+      }
+    } else if (type === "turn.completed") {
+      const usage = event.usage as Record<string, number> | undefined;
+      enqueue({
+        type: "done",
+        finishReason: "stop",
+        sessionId,
+        usage: usage
+          ? {
+              prompt_tokens: usage.input_tokens ?? 0,
+              completion_tokens: usage.output_tokens ?? 0,
+              total_tokens:
+                (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0),
+            }
+          : undefined,
+      });
+    } else if (type === "turn.failed") {
+      const error = event.error as
+        | Record<string, string>
+        | string
+        | undefined;
+      const message =
+        typeof error === "string"
+          ? error
+          : error?.message ?? "Turn failed";
+      enqueue({ type: "error", error: message });
+    } else if (type === "error") {
+      enqueue({
+        type: "error",
+        error: (event.message as string) ?? "Unknown codex error",
+      });
+    }
+  }
+
+  // Log stderr (Codex prints "Reconnecting..." messages here)
+  child.stderr?.on("data", (data: Buffer) => {
+    for (const line of data.toString("utf-8").split("\n")) {
+      const trimmed = line.trim();
+      if (trimmed) console.log(`[codex:stderr] ${trimmed}`);
+    }
+  });
+
+  child.stdout!.on("data", (data: Buffer) => {
+    lineBuf += data.toString("utf-8");
+    const lines = lineBuf.split("\n");
+    lineBuf = lines.pop() ?? "";
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed) processLine(trimmed);
+    }
+  });
+
+  child.on("close", (exitCode) => {
+    if (lineBuf.trim()) {
+      processLine(lineBuf.trim());
+      lineBuf = "";
+    }
+    if (exitCode !== 0) {
+      enqueue({
+        type: "error",
+        error: `CLI exited with code ${exitCode}`,
+      });
+    }
+    finish();
+  });
+
+  const output: AsyncIterable<ChatChunk> = {
+    [Symbol.asyncIterator]() {
+      return {
+        async next(): Promise<IteratorResult<ChatChunk>> {
+          while (true) {
+            if (chunkQueue.length > 0) {
+              return { value: chunkQueue.shift()!, done: false };
+            }
+            if (done) {
+              return {
+                value: undefined as unknown as ChatChunk,
+                done: true,
+              };
+            }
+            await new Promise<void>((resolve) => {
+              waitResolve = resolve;
+            });
+          }
+        },
+      };
+    },
+  };
+
+  return { output, child };
+}
 
 export function createCodexBackend(config: BackendConfig): CliBackend {
   const command = config.command || "codex";
@@ -45,7 +202,7 @@ export function createCodexBackend(config: BackendConfig): CliBackend {
     },
 
     run(req: SpawnRequest): CliHandle {
-      // Determine if resuming an existing codex session
+      // Build args once — shared across retries
       const codexThreadId = sessionMapping.get(req.sessionId);
       const isResume = !req.isNewConversation && codexThreadId;
 
@@ -57,15 +214,12 @@ export function createCodexBackend(config: BackendConfig): CliBackend {
         args.push("exec");
       }
 
-      // Always use JSON output, no color, allow running outside git repos
       args.push("--json", "--color", "never", "--skip-git-repo-check");
 
-      // Model selection
       if (req.model) {
         args.push("-m", req.model);
       }
 
-      // System prompt via config override
       if (req.systemPrompt) {
         const escaped = req.systemPrompt
           .replace(/\\/g, "\\\\")
@@ -73,17 +227,14 @@ export function createCodexBackend(config: BackendConfig): CliBackend {
         args.push("-c", `developer_instructions="${escaped}"`);
       }
 
-      // Permissions
       if (req.tools) {
         args.push("--dangerously-bypass-approvals-and-sandbox");
       } else {
         args.push("--sandbox", "read-only");
       }
 
-      // Working directory
       args.push("-C", process.cwd());
 
-      // Extract the last user message as the prompt
       const lastUserMsg = [...req.messages]
         .reverse()
         .find((m) => m.role === "user");
@@ -101,170 +252,109 @@ export function createCodexBackend(config: BackendConfig): CliBackend {
                 .join("\n")
             : "";
 
-      // For resume: thread_id then prompt; otherwise just the prompt
       if (isResume) {
         args.push("--", codexThreadId, prompt);
       } else {
         args.push("--", prompt);
       }
 
-      const child = spawn(command, args, {
-        cwd: process.cwd(),
-        env: cleanEnv("codex"),
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-
-      // Buffer for incomplete lines
-      let lineBuf = "";
+      // Retry state
       let killed = false;
-      let codexSessionId = "";
+      let currentChild: ChildProcess | null = null;
 
-      // Queue of parsed chunks + resolve for the async iterator
-      const chunkQueue: ChatChunk[] = [];
-      let done = false;
-      let waitResolve: (() => void) | null = null;
-      let iterError: Error | null = null;
-
-      function enqueue(chunk: ChatChunk): void {
-        chunkQueue.push(chunk);
-        if (waitResolve) {
-          const r = waitResolve;
-          waitResolve = null;
-          r();
-        }
-      }
-
-      function finish(): void {
-        done = true;
-        if (waitResolve) {
-          const r = waitResolve;
-          waitResolve = null;
-          r();
-        }
-      }
-
-      function processLine(trimmed: string): void {
-        let event: Record<string, unknown>;
-        try {
-          event = JSON.parse(trimmed);
-        } catch {
-          return;
-        }
-
-        const type = event.type as string;
-
-        if (type === "thread.started") {
-          const threadId = event.thread_id as string;
-          if (threadId) {
-            codexSessionId = threadId;
-            sessionMapping.set(req.sessionId, threadId);
-          }
-        } else if (type === "item.completed") {
-          const item = event.item as Record<string, unknown>;
-          if (
-            item?.type === "agent_message" &&
-            typeof item.text === "string"
-          ) {
-            // Strip Codex conversation markers like [[reply_to_current]]
-            const text = item.text.replace(/\[\[[\w_]+\]\]\s*/g, "").trim();
-            if (text) enqueue({ type: "content", content: text });
-          }
-          // Skip reasoning, command_execution, file_change, etc.
-        } else if (type === "turn.completed") {
-          const usage = event.usage as Record<string, number> | undefined;
-          enqueue({
-            type: "done",
-            finishReason: "stop",
-            sessionId: req.sessionId,
-            usage: usage
-              ? {
-                  prompt_tokens: usage.input_tokens ?? 0,
-                  completion_tokens: usage.output_tokens ?? 0,
-                  total_tokens:
-                    (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0),
-                }
-              : undefined,
-          });
-        } else if (type === "turn.failed") {
-          const error = event.error as Record<string, string> | string | undefined;
-          const message =
-            typeof error === "string"
-              ? error
-              : error?.message ?? "Turn failed";
-          enqueue({ type: "error", error: message });
-        } else if (type === "error") {
-          enqueue({
-            type: "error",
-            error: (event.message as string) ?? "Unknown codex error",
-          });
-        }
-        // Skip: turn.started, other event types
-      }
-
-      // Handle stdout data
-      child.stdout!.on("data", (data: Buffer) => {
-        lineBuf += data.toString("utf-8");
-
-        const lines = lineBuf.split("\n");
-        lineBuf = lines.pop() ?? "";
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
-          processLine(trimmed);
-        }
-      });
-
-      // Handle process exit
-      child.on("close", (exitCode) => {
-        // Process any remaining data in the buffer
-        if (lineBuf.trim()) {
-          processLine(lineBuf.trim());
-          lineBuf = "";
-        }
-
-        if (exitCode !== 0 && !killed) {
-          enqueue({
-            type: "error",
-            error: `CLI exited with code ${exitCode}`,
-          });
-        }
-        finish();
-      });
-
-      // Handle abort signal
-      if (req.signal) {
-        const onAbort = () => {
-          killed = true;
-          child.kill("SIGTERM");
-          finish();
-        };
-        if (req.signal.aborted) {
-          onAbort();
-        } else {
-          req.signal.addEventListener("abort", onAbort, { once: true });
-        }
-      }
-
-      // Create async iterable from child process events
+      // Outer async iterable with transparent retry
       const output: AsyncIterable<ChatChunk> = {
         [Symbol.asyncIterator]() {
+          let attempt = 0;
+          let gotContent = false;
+          let inner: AsyncIterator<ChatChunk> | null = null;
+
           return {
             async next(): Promise<IteratorResult<ChatChunk>> {
               while (true) {
-                if (iterError) throw iterError;
-                if (chunkQueue.length > 0) {
-                  return { value: chunkQueue.shift()!, done: false };
-                }
-                if (done) {
+                if (killed) {
                   return {
                     value: undefined as unknown as ChatChunk,
                     done: true,
                   };
                 }
-                await new Promise<void>((resolve) => {
-                  waitResolve = resolve;
-                });
+
+                // Spawn on first call or after retry
+                if (!inner) {
+                  const label =
+                    attempt === 0
+                      ? `attempt 1/${MAX_RETRIES + 1}`
+                      : `retry ${attempt}/${MAX_RETRIES}`;
+                  console.log(`[codex] Spawning (${label})`);
+                  const spawned = spawnCodex(command, args, req.sessionId);
+                  currentChild = spawned.child;
+                  inner = spawned.output[Symbol.asyncIterator]();
+
+                  // Wire abort signal to current child
+                  if (req.signal) {
+                    if (req.signal.aborted) {
+                      killed = true;
+                      currentChild.kill("SIGTERM");
+                      return {
+                        value: undefined as unknown as ChatChunk,
+                        done: true,
+                      };
+                    }
+                    const child = currentChild;
+                    req.signal.addEventListener(
+                      "abort",
+                      () => {
+                        killed = true;
+                        child.kill("SIGTERM");
+                      },
+                      { once: true },
+                    );
+                  }
+                }
+
+                const result = await inner.next();
+
+                // Inner iterable exhausted — we're done
+                if (result.done) {
+                  return result;
+                }
+
+                const chunk = result.value;
+
+                // Track whether we've sent any real content
+                if (chunk.type === "content") {
+                  gotContent = true;
+                  return { value: chunk, done: false };
+                }
+
+                // Success — pass through
+                if (chunk.type === "done") {
+                  return { value: chunk, done: false };
+                }
+
+                // Error — retry if no content sent yet and retries remain
+                if (
+                  chunk.type === "error" &&
+                  !gotContent &&
+                  !killed &&
+                  attempt < MAX_RETRIES
+                ) {
+                  attempt++;
+                  const delay = 1000 * attempt;
+                  console.log(
+                    `[codex] Retry ${attempt}/${MAX_RETRIES} in ${delay}ms: ${chunk.error}`,
+                  );
+                  currentChild?.kill("SIGTERM");
+                  await new Promise((r) => setTimeout(r, delay));
+                  inner = null; // will respawn on next loop
+                  continue;
+                }
+
+                // Non-retryable error or content already sent
+                if (chunk.type === "error" && attempt > 0) {
+                  chunk.error = `${chunk.error} (after ${attempt + 1} attempts)`;
+                }
+                return { value: chunk, done: false };
               }
             },
           };
@@ -275,7 +365,7 @@ export function createCodexBackend(config: BackendConfig): CliBackend {
         output,
         kill() {
           killed = true;
-          child.kill("SIGTERM");
+          currentChild?.kill("SIGTERM");
         },
       };
     },
