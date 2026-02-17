@@ -346,22 +346,47 @@ test:
 # ============================================================
 .PHONY: uninstall
 uninstall:
-	@echo "==> Uninstalling $(SERVICE_NAME)"
+	@echo "==> Uninstalling cli-gateway + OpenClaw (complete removal)"
+	@echo ""
+	@# --- Stop and remove cli-gateway system service ---
+	@echo "  Stopping cli-gateway service..."
 	-@sudo systemctl stop $(SERVICE_NAME) 2>/dev/null
 	-@sudo systemctl disable $(SERVICE_NAME) 2>/dev/null
 	-@sudo rm -f $(SERVICE_FILE)
 	-@sudo rm -f $(ENV_FILE)
 	@sudo systemctl daemon-reload
-	@echo ""
-	@echo -n "  Remove $(INSTALL_DIR)? [y/N] "
-	@read -r answer; \
-	if [ "$$answer" = "y" ] || [ "$$answer" = "Y" ]; then \
-		sudo rm -rf $(INSTALL_DIR); \
-		echo "  ✓ Removed $(INSTALL_DIR)"; \
-	else \
-		echo "  Kept $(INSTALL_DIR)"; \
+	@echo "  ✓ cli-gateway service removed"
+	@# --- Stop and remove OpenClaw user service ---
+	@echo "  Stopping OpenClaw gateway service..."
+	-@$(SYSTEMCTL_USER) stop $(OPENCLAW_SERVICE) 2>/dev/null
+	-@$(SYSTEMCTL_USER) disable $(OPENCLAW_SERVICE) 2>/dev/null
+	-@rm -f $(OPENCLAW_SVC_FILE)
+	-@$(SYSTEMCTL_USER) daemon-reload 2>/dev/null
+	@# Clean up old system-level openclaw service if it exists
+	-@sudo systemctl stop $(OPENCLAW_SERVICE) 2>/dev/null
+	-@sudo systemctl disable $(OPENCLAW_SERVICE) 2>/dev/null
+	-@sudo rm -f /etc/systemd/system/$(OPENCLAW_SERVICE).service
+	@echo "  ✓ OpenClaw gateway service removed"
+	@# --- Remove /usr/local/bin/openclaw wrapper ---
+	-@sudo rm -f /usr/local/bin/openclaw
+	@echo "  ✓ Removed /usr/local/bin/openclaw"
+	@# --- Remove .bashrc additions ---
+	@BASHRC="$(INSTALL_USER_HOME)/.bashrc"; \
+	if grep -qF "# cli-gateway environment" "$$BASHRC" 2>/dev/null; then \
+		sed -i '/# cli-gateway environment/,+2d' "$$BASHRC"; \
+		echo "  ✓ Cleaned $$BASHRC"; \
 	fi
-	@echo "  ✓ cli-gateway uninstalled"
+	@# --- Remove OpenClaw config ---
+	-@rm -rf $(INSTALL_USER_HOME)/.openclaw
+	@echo "  ✓ Removed ~/.openclaw"
+	@# --- Remove install directory (cli-gateway + openclaw clone) ---
+	@sudo rm -rf $(INSTALL_DIR)
+	@echo "  ✓ Removed $(INSTALL_DIR)"
+	@echo ""
+	@echo "  ✓ Complete uninstall done."
+	@echo "  Note: CLI tools (claude, codex, gemini) were NOT removed."
+	@echo "  To remove them: sudo npm uninstall -g @anthropic-ai/claude-code @openai/codex @google/gemini-cli"
+	@echo ""
 
 # ============================================================
 # OpenClaw integration
