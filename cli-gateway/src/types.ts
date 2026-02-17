@@ -51,7 +51,7 @@ export interface UsageInfo {
 // --- OpenAI wire types ---
 
 export interface OpenAIMessage {
-  role: "system" | "user" | "assistant" | "tool";
+  role: "system" | "developer" | "user" | "assistant" | "tool";
   content: string | Array<Record<string, unknown>>;
   name?: string;
 }

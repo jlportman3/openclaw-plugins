@@ -115,6 +115,8 @@ async function handleChatCompletions(
     return errorResponse(res, 400, "Missing required field: messages");
   }
 
+  console.log(`[REQ] model=${body.model} stream=${body.stream} messages=${body.messages.length}`);
+
   const { backendId, modelName } = parseModelId(body.model);
   const backend = getBackend(backendId);
 
@@ -128,7 +130,7 @@ async function handleChatCompletions(
 
   // Extract system prompt from messages
   const systemMessages = body.messages.filter(
-    (m: OpenAIMessage) => m.role === "system",
+    (m: OpenAIMessage) => m.role === "system" || m.role === "developer",
   );
   const extractText = (content: string | Array<Record<string, unknown>>): string =>
     typeof content === "string"
