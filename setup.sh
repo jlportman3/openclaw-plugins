@@ -82,6 +82,12 @@ install_system_deps() {
         ca-certificates    # HTTPS certificate trust for npm registry + NodeSource
     )
 
+    # CLI tools use xdg-open for OAuth — need a real browser
+    if ! command -v xdg-open &>/dev/null || ! xdg-settings get default-web-browser &>/dev/null 2>&1; then
+        info "No browser detected — installing Firefox for OAuth flows"
+        required_pkgs+=(firefox)
+    fi
+
     local -a missing=()
     for pkg in "${required_pkgs[@]}"; do
         if ! dpkg -s "$pkg" &>/dev/null; then
