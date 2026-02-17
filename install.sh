@@ -64,11 +64,13 @@ fi
 # --- Hand off to setup.sh as the user ---
 echo "  Launching setup.sh as $TARGET_USER..."
 echo ""
-su - "$TARGET_USER" -c "$DEST/setup.sh" </dev/tty >/dev/tty 2>&1
+# Use 'script' to allocate a real PTY — solves terminal I/O issues
+# when running under 'curl | sudo bash' pipe chains.
+script -qc "su - $TARGET_USER -c 'bash $DEST/setup.sh'" /dev/null </dev/tty
 EXIT_CODE=$?
 if [ $EXIT_CODE -ne 0 ]; then
-    echo "" >/dev/tty
-    echo "  setup.sh exited with code $EXIT_CODE" >/dev/tty
-    echo "  To retry manually: $DEST/setup.sh" >/dev/tty
+    echo ""
+    echo "  setup.sh exited with code $EXIT_CODE"
+    echo "  To retry manually: $DEST/setup.sh"
 fi
 exit $EXIT_CODE
