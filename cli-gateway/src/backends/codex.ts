@@ -165,7 +165,9 @@ export function createCodexBackend(config: BackendConfig): CliBackend {
             item?.type === "agent_message" &&
             typeof item.text === "string"
           ) {
-            enqueue({ type: "content", content: item.text });
+            // Strip Codex conversation markers like [[reply_to_current]]
+            const text = item.text.replace(/\[\[[\w_]+\]\]\s*/g, "").trim();
+            if (text) enqueue({ type: "content", content: text });
           }
           // Skip reasoning, command_execution, file_change, etc.
         } else if (type === "turn.completed") {
