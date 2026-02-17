@@ -340,6 +340,12 @@ test:
 	@echo "    curl -X POST http://localhost:$(GATEWAY_PORT)/v1/chat/completions \\"
 	@echo "      -H 'Content-Type: application/json' \\"
 	@echo "      -d '{\"model\":\"claude-code/opus\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}]}'"
+	@echo ""
+	@echo "  For full provider tests: make test-providers"
+
+.PHONY: test-providers
+test-providers:
+	@$(CURDIR)/cli-gateway/test-providers.sh http://localhost:$(GATEWAY_PORT)
 
 # ============================================================
 # Uninstall

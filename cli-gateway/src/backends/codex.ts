@@ -208,33 +208,7 @@ export function createCodexBackend(config: BackendConfig): CliBackend {
 
       const args: string[] = [];
 
-      if (isResume) {
-        args.push("exec", "resume");
-      } else {
-        args.push("exec");
-      }
-
-      args.push("--json", "--color", "never", "--skip-git-repo-check");
-
-      if (req.model) {
-        args.push("-m", req.model);
-      }
-
-      if (req.systemPrompt) {
-        const escaped = req.systemPrompt
-          .replace(/\\/g, "\\\\")
-          .replace(/"/g, '\\"');
-        args.push("-c", `developer_instructions="${escaped}"`);
-      }
-
-      if (req.tools) {
-        args.push("--dangerously-bypass-approvals-and-sandbox");
-      } else {
-        args.push("--sandbox", "read-only");
-      }
-
-      args.push("-C", process.cwd());
-
+      // Extract prompt text from last user message
       const lastUserMsg = [...req.messages]
         .reverse()
         .find((m) => m.role === "user");
@@ -253,8 +227,44 @@ export function createCodexBackend(config: BackendConfig): CliBackend {
             : "";
 
       if (isResume) {
+        // `codex exec resume` only supports: --json, --skip-git-repo-check,
+        // -m, -c, --dangerously-bypass-approvals-and-sandbox
+        // NOT: --color, -C, --sandbox
+        args.push("exec", "resume");
+        args.push("--json", "--skip-git-repo-check");
+
+        if (req.model) {
+          args.push("-m", req.model);
+        }
+
+        if (req.tools) {
+          args.push("--dangerously-bypass-approvals-and-sandbox");
+        }
+
         args.push("--", codexThreadId, prompt);
       } else {
+        // `codex exec` supports full flag set
+        args.push("exec");
+        args.push("--json", "--color", "never", "--skip-git-repo-check");
+
+        if (req.model) {
+          args.push("-m", req.model);
+        }
+
+        if (req.systemPrompt) {
+          const escaped = req.systemPrompt
+            .replace(/\\/g, "\\\\")
+            .replace(/"/g, '\\"');
+          args.push("-c", `developer_instructions="${escaped}"`);
+        }
+
+        if (req.tools) {
+          args.push("--dangerously-bypass-approvals-and-sandbox");
+        } else {
+          args.push("--sandbox", "read-only");
+        }
+
+        args.push("-C", process.cwd());
         args.push("--", prompt);
       }
 
