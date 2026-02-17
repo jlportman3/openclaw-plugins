@@ -14,7 +14,7 @@ SCRIPT_DIR     := $(shell cd "$(dir $(lastword $(MAKEFILE_LIST)))" && pwd)
 GATEWAY_SRC    := $(SCRIPT_DIR)/cli-gateway
 SERVICE_FILE   := /etc/systemd/system/$(SERVICE_NAME).service
 ENV_FILE       := /etc/default/$(SERVICE_NAME)
-OPENCLAW_REPO  := https://github.com/nicobailon/openclaw.git
+OPENCLAW_REPO  := https://github.com/openclaw/openclaw.git
 OPENCLAW_DIR   := $(INSTALL_DIR)/openclaw
 
 # --- User (set by setup.sh, defaults to current user) ---
