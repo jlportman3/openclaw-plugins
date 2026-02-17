@@ -131,7 +131,7 @@ config["agents"] = {"defaults": {"model": {"primary": first or "", "fallbacks": 
 # Preserve commands section
 config["commands"] = existing.get("commands", {"native": "auto", "nativeSkills": "auto"})
 # Gateway config with proper auth
-config["gateway"] = {"port": $(OPENCLAW_PORT), "mode": "local", "bind": "lan", "auth": {"mode": "token", "token": auth_token}}
+config["gateway"] = {"port": $(OPENCLAW_PORT), "mode": "local", "bind": "lan", "auth": {"mode": "token", "token": auth_token}, "controlUi": {"allowInsecureAuth": True}}
 # Metadata
 config["meta"] = {"lastTouchedVersion": existing.get("meta", {}).get("lastTouchedVersion", "cli-gateway"), "lastTouchedAt": now}
 
