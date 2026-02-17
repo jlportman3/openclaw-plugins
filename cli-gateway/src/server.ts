@@ -153,9 +153,9 @@ async function handleChatCompletions(
     systemPrompt,
     firstUserMsg?.content,
   );
-  const isNew = isNewConversation(sessionId, body.messages.length);
+  const isNew = isNewConversation(sessionId);
 
-  console.log(`[SESSION] id=${sessionId} new=${isNew} msgCount=${body.messages.length} headerSid=${headerSessionId ?? "none"} sysprompt=${systemPrompt ? systemPrompt.slice(0, 60) + "..." : "none"} firstUser=${typeof firstUserMsg?.content === "string" ? firstUserMsg.content.slice(0, 60) + "..." : "non-string"}`);
+  console.log(`[SESSION] id=${sessionId} new=${isNew} msgs=${body.messages.length}`);
 
   // Abort controller for cancellation
   const ac = new AbortController();

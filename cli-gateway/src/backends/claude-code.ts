@@ -7,7 +7,6 @@ import type {
   CliBackend,
   CliHandle,
   ModelInfo,
-  OpenAIMessage,
   SpawnRequest,
 } from "../types.ts";
 
@@ -15,62 +14,6 @@ import type {
 function stripAnsi(str: string): string {
   // eslint-disable-next-line no-control-regex
   return str.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*\x07|\][^\x1B]*\x1B\\)/g, "");
-}
-
-// Extract text from a message content field (string or content parts array)
-function extractText(content: string | Array<Record<string, unknown>>): string {
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .filter((p) => p.type === "text")
-      .map((p) => p.text as string)
-      .join("\n");
-  }
-  return "";
-}
-
-// Format the full conversation history into a single prompt.
-// System/developer messages go to --system-prompt; user/assistant history
-// is formatted as a structured conversation in the prompt text.
-function formatConversationPrompt(messages: OpenAIMessage[]): {
-  systemPrompt: string | undefined;
-  prompt: string;
-} {
-  const systemParts: string[] = [];
-  const conversationParts: string[] = [];
-
-  for (const msg of messages) {
-    const text = extractText(msg.content);
-    if (!text) continue;
-
-    if (msg.role === "system" || msg.role === "developer") {
-      systemParts.push(text);
-    } else if (msg.role === "user") {
-      conversationParts.push(`<user>\n${text}\n</user>`);
-    } else if (msg.role === "assistant") {
-      conversationParts.push(`<assistant>\n${text}\n</assistant>`);
-    }
-    // skip tool messages
-  }
-
-  // If there's only one user message and no assistant messages, just use it directly
-  const userMessages = messages.filter((m) => m.role === "user");
-  const assistantMessages = messages.filter((m) => m.role === "assistant");
-
-  if (userMessages.length === 1 && assistantMessages.length === 0) {
-    return {
-      systemPrompt: systemParts.length ? systemParts.join("\n") : undefined,
-      prompt: extractText(userMessages[0].content),
-    };
-  }
-
-  // Multi-turn: format full history
-  const prompt = `<conversation>\n${conversationParts.join("\n\n")}\n</conversation>\n\nContinue this conversation. Respond to the last user message.`;
-
-  return {
-    systemPrompt: systemParts.length ? systemParts.join("\n") : undefined,
-    prompt,
-  };
 }
 
 export function createClaudeCodeBackend(config: BackendConfig): CliBackend {
@@ -105,8 +48,6 @@ export function createClaudeCodeBackend(config: BackendConfig): CliBackend {
     },
 
     run(req: SpawnRequest): CliHandle {
-      const { systemPrompt, prompt } = formatConversationPrompt(req.messages);
-
       const args = [
         "-p",
         "--verbose",
@@ -116,8 +57,15 @@ export function createClaudeCodeBackend(config: BackendConfig): CliBackend {
         req.model,
       ];
 
-      if (systemPrompt) {
-        args.push("--system-prompt", systemPrompt);
+      if (req.isNewConversation) {
+        args.push("--session-id", req.sessionId);
+        if (req.systemPrompt) {
+          args.push("--system-prompt", req.systemPrompt);
+        }
+        console.log(`[claude-code] NEW session=${req.sessionId} msgs=${req.messages.length}`);
+      } else {
+        args.push("--resume", req.sessionId);
+        console.log(`[claude-code] RESUME session=${req.sessionId} msgs=${req.messages.length}`);
       }
 
       if (!req.tools) {
@@ -126,10 +74,25 @@ export function createClaudeCodeBackend(config: BackendConfig): CliBackend {
         args.push("--dangerously-skip-permissions");
       }
 
-      // Use -- to separate options from the prompt positional argument
-      args.push("--", prompt);
+      // Extract the last user message as the prompt
+      const lastUserMsg = [...req.messages]
+        .reverse()
+        .find((m) => m.role === "user");
+      // Content may be a string or an array of content parts
+      const rawContent = lastUserMsg?.content;
+      const prompt =
+        typeof rawContent === "string"
+          ? rawContent
+          : Array.isArray(rawContent)
+            ? rawContent
+                .filter((p: unknown) => (p as Record<string, unknown>)?.type === "text")
+                .map((p: unknown) => (p as Record<string, string>).text)
+                .join("\n")
+            : "";
 
-      console.log(`[claude-code] msgs=${req.messages.length} prompt_len=${prompt.length} sys_len=${systemPrompt?.length ?? 0}`);
+      // Use -- to separate options from the prompt positional argument
+      // This prevents variadic flags (--tools, --allowedTools) from consuming the prompt
+      args.push("--", prompt);
 
       const ptyProcess = pty.spawn(command, args, {
         name: "xterm-256color",
@@ -205,13 +168,15 @@ export function createClaudeCodeBackend(config: BackendConfig): CliBackend {
           } else if (type === "result") {
             const subtype = event.subtype as string;
             const usage = event.usage as Record<string, number> | undefined;
-            const sessionId = event.session_id as string | undefined;
+            const resultSessionId = event.session_id as string | undefined;
+
+            console.log(`[claude-code] result: subtype=${subtype} cli_session=${resultSessionId ?? "none"} our_session=${req.sessionId}`);
 
             if (subtype === "success") {
               enqueue({
                 type: "done",
                 finishReason: "stop",
-                sessionId,
+                sessionId: resultSessionId,
                 usage: usage
                   ? {
                       prompt_tokens: usage.input_tokens ?? 0,
@@ -241,12 +206,12 @@ export function createClaudeCodeBackend(config: BackendConfig): CliBackend {
             if (event.type === "result") {
               const subtype = event.subtype as string;
               const usage = event.usage as Record<string, number> | undefined;
-              const sessionId = event.session_id as string | undefined;
+              const resultSessionId = event.session_id as string | undefined;
               if (subtype === "success") {
                 enqueue({
                   type: "done",
                   finishReason: "stop",
-                  sessionId,
+                  sessionId: resultSessionId,
                   usage: usage
                     ? {
                         prompt_tokens: usage.input_tokens ?? 0,
